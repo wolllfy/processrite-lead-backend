@@ -1,0 +1,104 @@
+<form class="pr-lead-form" data-processrite-lead-form>
+  <input type="text" name="company" autocomplete="off" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;">
+
+  <label>
+    Name
+    <input type="text" name="name" autocomplete="name" required>
+  </label>
+
+  <label>
+    Business name
+    <input type="text" name="business_name" autocomplete="organization">
+  </label>
+
+  <label>
+    Phone
+    <input type="tel" name="phone" autocomplete="tel" required>
+  </label>
+
+  <label>
+    Email
+    <input type="email" name="email" autocomplete="email" required>
+  </label>
+
+  <label>
+    Business type
+    <select name="business_type" required>
+      <option value="">Select one</option>
+      <option>Restaurant</option>
+      <option>Deli / Bagel Shop</option>
+      <option>Retail</option>
+      <option>Grocery / Supermarket</option>
+      <option>Gas Station / Convenience Store</option>
+      <option>Professional Services</option>
+      <option>Healthcare</option>
+      <option>Other</option>
+    </select>
+  </label>
+
+  <label>
+    Monthly processing volume
+    <select name="monthly_processing_volume" required>
+      <option value="">Select one</option>
+      <option>Under $10,000</option>
+      <option>$10,000 - $25,000</option>
+      <option>$25,000 - $50,000</option>
+      <option>$50,000 - $100,000</option>
+      <option>$100,000+</option>
+      <option>Not sure</option>
+    </select>
+  </label>
+
+  <label>
+    Current processor
+    <input type="text" name="current_processor" placeholder="Optional">
+  </label>
+
+  <label>
+    Message
+    <textarea name="message" rows="5"></textarea>
+  </label>
+
+  <button type="submit">Talk to a Payments Expert</button>
+  <p class="pr-lead-status" role="status" aria-live="polite"></p>
+</form>
+
+<script>
+(function () {
+  const endpoint = "https://YOUR-RENDER-SERVICE.onrender.com/api/leads";
+
+  document.querySelectorAll("[data-processrite-lead-form]").forEach(function (form) {
+    const status = form.querySelector(".pr-lead-status");
+
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      const button = form.querySelector("button[type='submit']");
+      const originalText = button.textContent;
+      const payload = Object.fromEntries(new FormData(form).entries());
+      payload.page_source = window.location.href;
+      payload.timestamp = new Date().toISOString();
+
+      button.disabled = true;
+      button.textContent = "Sending...";
+      status.textContent = "";
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json().catch(function () { return {}; });
+        if (!response.ok || !result.ok) throw new Error(result.message || "Submission failed");
+        form.reset();
+        status.textContent = "Thanks. Your message was sent.";
+      } catch (error) {
+        status.textContent = "Something went wrong. Please call (973) 314-2419 or email info@processrite.com.";
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    });
+  });
+}());
+</script>
