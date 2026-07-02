@@ -193,7 +193,12 @@ app.post("/api/leads", async (req, res) => {
       code: error.code || error.name,
       message: error.message
     });
-    return res.status(500).json({ ok: false, message: "Something went wrong. Please call or email Process Rite directly." });
+    return res.status(500).json({
+      ok: false,
+      message: "Something went wrong. Please call or email Process Rite directly.",
+      stage: submissionId ? "email_or_post_store" : "store",
+      code: error.code || error.name || "UNKNOWN"
+    });
   } finally {
     client.release();
   }
