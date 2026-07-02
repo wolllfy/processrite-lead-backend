@@ -57,6 +57,7 @@ function requireEnv() {
   for (const key of ["DATABASE_URL", "EMAIL_FROM", "EMAIL_TO", "SMTP_HOST", "SMTP_USER", "SMTP_PASS"]) {
     if (!process.env[key]) missing.push(key);
   }
+  if (process.env.SMTP_PASS === "REPLACE_WITH_GMAIL_APP_PASSWORD") missing.push("SMTP_PASS");
   return missing;
 }
 
