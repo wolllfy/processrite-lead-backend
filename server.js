@@ -61,12 +61,6 @@ function requireEnv() {
   return missing;
 }
 
-function logEnvPresence() {
-  const requiredKeys = ["DATABASE_URL", "EMAIL_FROM", "EMAIL_TO", "SMTP_HOST", "SMTP_USER", "SMTP_PASS"];
-  console.info("env_presence", Object.fromEntries(requiredKeys.map((key) => [key, Boolean(process.env[key])])));
-  console.info("smtp_pass_placeholder", process.env.SMTP_PASS === "REPLACE_WITH_GMAIL_APP_PASSWORD");
-}
-
 function hashIp(rawIp = "") {
   return crypto.createHmac("sha256", IP_HASH_SECRET).update(rawIp).digest("hex");
 }
@@ -126,7 +120,8 @@ async function ensureSchema() {
 
 app.get("/health", (_req, res) => {
   const missing = requireEnv();
-  res.status(missing.length ? 500 : 200).json({ ok: missing.length === 0, missing });
+  if (missing.length) return res.status(500).json({ ok: false, missing });
+  return res.status(200).json({ ok: true });
 });
 
 app.post("/api/leads", async (req, res) => {
@@ -199,7 +194,6 @@ app.post("/api/leads", async (req, res) => {
 const port = process.env.PORT || 3000;
 ensureSchema()
   .then(() => {
-    logEnvPresence();
     app.listen(port, () => console.log(`Process Rite lead backend listening on ${port}`));
   })
   .catch((error) => {
