@@ -90,6 +90,7 @@ function getMailer() {
     host: SMTP_HOST,
     port: Number(SMTP_PORT),
     secure: Number(SMTP_PORT) === 465,
+    family: 4,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
     connectionTimeout: 15000,
     greetingTimeout: 15000,
