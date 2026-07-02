@@ -90,7 +90,10 @@ function getMailer() {
     host: SMTP_HOST,
     port: Number(SMTP_PORT),
     secure: Number(SMTP_PORT) === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS }
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000
   });
 }
 
@@ -128,8 +131,11 @@ app.post("/api/leads", async (req, res) => {
   const missing = requireEnv();
   if (missing.length) return res.status(500).json({ ok: false, message: "Lead service is not fully configured." });
 
+  console.info("lead_request_received", { pageSource: req.body?.page_source || "", hasEmail: Boolean(req.body?.email) });
+
   const parsed = leadSchema.safeParse(req.body);
   if (!parsed.success) {
+    console.warn("lead_validation_failed", { issues: parsed.error.issues.map((issue) => issue.path.join(".")) });
     return res.status(400).json({ ok: false, message: "Please check the form fields and try again." });
   }
 
@@ -165,6 +171,8 @@ app.post("/api/leads", async (req, res) => {
       ]
     );
     submissionId = stored.rows[0].id;
+
+    console.info("lead_submission_stored", { id: submissionId, pageSource: lead.page_source });
 
     await getMailer().sendMail({
       from: EMAIL_FROM,
