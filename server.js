@@ -197,7 +197,9 @@ app.post("/api/leads", async (req, res) => {
     });
     return res.status(500).json({
       ok: false,
-      message: "Something went wrong. Please call or email Process Rite directly."
+      message: "Something went wrong. Please call or email Process Rite directly.",
+      code: error.code || error.name || "UNKNOWN",
+      detail: String(error.message || "").slice(0, 160)
     });
   } finally {
     client.release();
