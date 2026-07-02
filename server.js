@@ -93,6 +93,30 @@ function getMailer() {
   });
 }
 
+async function ensureSchema() {
+  if (!pool) return;
+  await pool.query(`
+    create table if not exists lead_submissions (
+      id bigserial primary key,
+      created_at timestamptz not null default now(),
+      name text not null,
+      business_name text,
+      phone text not null,
+      email text not null,
+      business_type text not null,
+      monthly_processing_volume text not null,
+      current_processor text,
+      message text,
+      page_source text,
+      user_agent text,
+      ip_hash text,
+      email_alert_sent boolean not null default false
+    );
+    create index if not exists lead_submissions_created_at_idx on lead_submissions (created_at desc);
+    create index if not exists lead_submissions_email_idx on lead_submissions (lower(email));
+  `);
+}
+
 app.get("/health", (_req, res) => {
   const missing = requireEnv();
   res.status(missing.length ? 500 : 200).json({ ok: missing.length === 0, missing });
@@ -166,4 +190,11 @@ app.post("/api/leads", async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Process Rite lead backend listening on ${port}`));
+ensureSchema()
+  .then(() => {
+    app.listen(port, () => console.log(`Process Rite lead backend listening on ${port}`));
+  })
+  .catch((error) => {
+    console.error("schema_init_error", { code: error.code || error.name, message: error.message });
+    process.exit(1);
+  });
