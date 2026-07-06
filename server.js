@@ -16,12 +16,14 @@ const {
   SMTP_PORT = "587",
   SMTP_USER,
   SMTP_PASS,
-  ALLOWED_ORIGINS = "https://processrite.com,https://www.processrite.com",
-  IP_HASH_SECRET = "change-this-in-render"
+  ALLOWED_ORIGINS = "https://processrite.com,https://www.processrite.com,https://portal.processrite.com,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176",
+  IP_HASH_SECRET = "change-this-in-render",
+  CRM_API_KEY = ""
 } = process.env;
 
 const app = express();
 app.set("trust proxy", 1);
+
 const pool = DATABASE_URL
   ? new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } })
   : null;
@@ -37,7 +39,9 @@ app.use(cors({
     return callback(new Error("Origin not allowed"));
   }
 }));
-app.use("/api/leads", rateLimit({ windowMs: 15 * 60 * 1000, limit: 8 }));
+
+const leadSubmitLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false });
+const leadReadLimiter = rateLimit({ windowMs: 60 * 1000, limit: 240, standardHeaders: true, legacyHeaders: false });
 
 const leadSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -53,6 +57,15 @@ const leadSchema = z.object({
   company: z.string().trim().max(1).optional().default("")
 });
 
+const leadUpdateSchema = z.object({
+  status: z.string().trim().max(80).optional(),
+  notes: z.string().trim().max(5000).optional(),
+  follow_up_date: z.string().trim().max(80).optional(),
+  assigned_to: z.string().trim().max(120).optional(),
+  lead_score: z.string().trim().max(80).optional(),
+  archived: z.boolean().optional()
+});
+
 function requireEnv() {
   const missing = [];
   for (const key of ["DATABASE_URL", "EMAIL_FROM", "EMAIL_TO", "SMTP_HOST", "SMTP_USER", "SMTP_PASS"]) {
@@ -60,6 +73,19 @@ function requireEnv() {
   }
   if (process.env.SMTP_PASS === "REPLACE_WITH_GMAIL_APP_PASSWORD") missing.push("SMTP_PASS");
   return missing;
+}
+
+function requireDatabase(res) {
+  if (pool) return true;
+  res.status(500).json({ ok: false, message: "Database is not configured." });
+  return false;
+}
+
+function requireCrmAccess(req, res) {
+  if (!CRM_API_KEY) return true;
+  if (req.get("x-crm-api-key") === CRM_API_KEY) return true;
+  res.status(401).json({ ok: false, message: "Unauthorized." });
+  return false;
 }
 
 function hashIp(rawIp = "") {
@@ -99,6 +125,30 @@ function getMailer() {
   });
 }
 
+function normalizeLead(row) {
+  return {
+    id: row.id,
+    created_at: row.created_at,
+    name: row.name || "",
+    business_name: row.business_name || "",
+    phone: row.phone || "",
+    email: row.email || "",
+    business_type: row.business_type || "",
+    monthly_processing_volume: row.monthly_processing_volume || "",
+    current_processor: row.current_processor || "",
+    message: row.message || "",
+    page_source: row.page_source || "",
+    user_agent: row.user_agent || "",
+    email_alert_sent: Boolean(row.email_alert_sent),
+    status: row.status || "New",
+    notes: row.notes || "",
+    follow_up_date: row.follow_up_date || "",
+    assigned_to: row.assigned_to || "",
+    lead_score: row.lead_score || "",
+    archived: Boolean(row.archived)
+  };
+}
+
 async function ensureSchema() {
   if (!pool) return;
   await pool.query(`
@@ -118,8 +168,18 @@ async function ensureSchema() {
       ip_hash text,
       email_alert_sent boolean not null default false
     );
+
+    alter table lead_submissions add column if not exists status text not null default 'New';
+    alter table lead_submissions add column if not exists notes text not null default '';
+    alter table lead_submissions add column if not exists follow_up_date text not null default '';
+    alter table lead_submissions add column if not exists assigned_to text not null default '';
+    alter table lead_submissions add column if not exists lead_score text not null default '';
+    alter table lead_submissions add column if not exists archived boolean not null default false;
+
     create index if not exists lead_submissions_created_at_idx on lead_submissions (created_at desc);
     create index if not exists lead_submissions_email_idx on lead_submissions (lower(email));
+    create index if not exists lead_submissions_status_idx on lead_submissions (status);
+    create index if not exists lead_submissions_archived_idx on lead_submissions (archived);
   `);
 }
 
@@ -129,9 +189,209 @@ app.get("/health", (_req, res) => {
   return res.status(200).json({ ok: true });
 });
 
-app.post("/api/leads", async (req, res) => {
+app.get("/api/leads", leadReadLimiter, async (req, res) => {
+  if (!requireDatabase(res)) return;
+  if (!requireCrmAccess(req, res)) return;
+
+  const search = String(req.query.search || "").trim().toLowerCase();
+  const status = String(req.query.status || "").trim();
+  const includeArchived = String(req.query.include_archived || "false") === "true";
+  const limitRaw = Number(req.query.limit || 500);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 1000) : 500;
+
+  const where = [];
+  const values = [];
+
+  if (!includeArchived) where.push("coalesce(archived, false) = false");
+
+  if (status && status !== "All") {
+    values.push(status);
+    where.push(`coalesce(status, 'New') = $${values.length}`);
+  }
+
+  if (search) {
+    values.push(`%${search}%`);
+    where.push(`(
+      lower(coalesce(name, '')) like $${values.length}
+      or lower(coalesce(business_name, '')) like $${values.length}
+      or lower(coalesce(phone, '')) like $${values.length}
+      or lower(coalesce(email, '')) like $${values.length}
+      or lower(coalesce(business_type, '')) like $${values.length}
+      or lower(coalesce(current_processor, '')) like $${values.length}
+      or lower(coalesce(page_source, '')) like $${values.length}
+    )`);
+  }
+
+  values.push(limit);
+
+  try {
+    const result = await pool.query(
+      `select
+        id,
+        created_at,
+        name,
+        business_name,
+        phone,
+        email,
+        business_type,
+        monthly_processing_volume,
+        current_processor,
+        message,
+        page_source,
+        user_agent,
+        email_alert_sent,
+        coalesce(status, 'New') as status,
+        coalesce(notes, '') as notes,
+        coalesce(follow_up_date, '') as follow_up_date,
+        coalesce(assigned_to, '') as assigned_to,
+        coalesce(lead_score, '') as lead_score,
+        coalesce(archived, false) as archived
+      from lead_submissions
+      ${where.length ? `where ${where.join(" and ")}` : ""}
+      order by created_at desc
+      limit $${values.length}`,
+      values
+    );
+
+    return res.status(200).json({ ok: true, count: result.rows.length, leads: result.rows.map(normalizeLead) });
+  } catch (error) {
+    console.error("lead_list_error", { code: error.code || error.name, message: error.message });
+    return res.status(500).json({ ok: false, message: "Unable to load leads.", code: error.code || error.name || "UNKNOWN" });
+  }
+});
+
+app.get("/api/leads/stats", leadReadLimiter, async (req, res) => {
+  if (!requireDatabase(res)) return;
+  if (!requireCrmAccess(req, res)) return;
+
+  try {
+    const result = await pool.query(`
+      select
+        count(*)::int as total,
+        count(*) filter (where created_at >= date_trunc('day', now()))::int as today,
+        count(*) filter (where created_at >= date_trunc('month', now()))::int as this_month,
+        count(*) filter (where coalesce(status, 'New') = 'New')::int as new_leads,
+        count(*) filter (where coalesce(status, '') = 'Contacted')::int as contacted,
+        count(*) filter (where coalesce(status, '') = 'Statement Received')::int as statement_received,
+        count(*) filter (where coalesce(status, '') = 'Pricing Sent')::int as pricing_sent,
+        count(*) filter (where coalesce(status, '') = 'Follow Up')::int as follow_up,
+        count(*) filter (where coalesce(status, '') = 'Won')::int as won,
+        count(*) filter (where coalesce(status, '') = 'Lost')::int as lost
+      from lead_submissions
+      where coalesce(archived, false) = false
+    `);
+
+    return res.status(200).json({ ok: true, stats: result.rows[0] });
+  } catch (error) {
+    console.error("lead_stats_error", { code: error.code || error.name, message: error.message });
+    return res.status(500).json({ ok: false, message: "Unable to load lead stats.", code: error.code || error.name || "UNKNOWN" });
+  }
+});
+
+app.get("/api/leads/:id", leadReadLimiter, async (req, res) => {
+  if (!requireDatabase(res)) return;
+  if (!requireCrmAccess(req, res)) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, message: "Invalid lead id." });
+
+  try {
+    const result = await pool.query(
+      `select
+        id,
+        created_at,
+        name,
+        business_name,
+        phone,
+        email,
+        business_type,
+        monthly_processing_volume,
+        current_processor,
+        message,
+        page_source,
+        user_agent,
+        email_alert_sent,
+        coalesce(status, 'New') as status,
+        coalesce(notes, '') as notes,
+        coalesce(follow_up_date, '') as follow_up_date,
+        coalesce(assigned_to, '') as assigned_to,
+        coalesce(lead_score, '') as lead_score,
+        coalesce(archived, false) as archived
+      from lead_submissions
+      where id = $1`,
+      [id]
+    );
+
+    if (!result.rows[0]) return res.status(404).json({ ok: false, message: "Lead not found." });
+    return res.status(200).json({ ok: true, lead: normalizeLead(result.rows[0]) });
+  } catch (error) {
+    console.error("lead_detail_error", { code: error.code || error.name, message: error.message });
+    return res.status(500).json({ ok: false, message: "Unable to load lead.", code: error.code || error.name || "UNKNOWN" });
+  }
+});
+
+app.patch("/api/leads/:id", leadReadLimiter, async (req, res) => {
+  if (!requireDatabase(res)) return;
+  if (!requireCrmAccess(req, res)) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, message: "Invalid lead id." });
+
+  const parsed = leadUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, message: "Invalid update fields." });
+
+  const fields = [];
+  const values = [];
+
+  for (const [key, value] of Object.entries(parsed.data)) {
+    values.push(value);
+    fields.push(`${key} = $${values.length}`);
+  }
+
+  if (!fields.length) return res.status(400).json({ ok: false, message: "No fields to update." });
+
+  values.push(id);
+
+  try {
+    const result = await pool.query(
+      `update lead_submissions
+       set ${fields.join(", ")}
+       where id = $${values.length}
+       returning
+        id,
+        created_at,
+        name,
+        business_name,
+        phone,
+        email,
+        business_type,
+        monthly_processing_volume,
+        current_processor,
+        message,
+        page_source,
+        user_agent,
+        email_alert_sent,
+        coalesce(status, 'New') as status,
+        coalesce(notes, '') as notes,
+        coalesce(follow_up_date, '') as follow_up_date,
+        coalesce(assigned_to, '') as assigned_to,
+        coalesce(lead_score, '') as lead_score,
+        coalesce(archived, false) as archived`,
+      values
+    );
+
+    if (!result.rows[0]) return res.status(404).json({ ok: false, message: "Lead not found." });
+    return res.status(200).json({ ok: true, lead: normalizeLead(result.rows[0]) });
+  } catch (error) {
+    console.error("lead_update_error", { code: error.code || error.name, message: error.message });
+    return res.status(500).json({ ok: false, message: "Unable to update lead.", code: error.code || error.name || "UNKNOWN" });
+  }
+});
+
+app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
   const missing = requireEnv();
   if (missing.length) return res.status(500).json({ ok: false, message: "Lead service is not fully configured." });
+  if (!requireDatabase(res)) return;
 
   console.info("lead_request_received", { pageSource: req.body?.page_source || "", hasEmail: Boolean(req.body?.email) });
 
@@ -155,8 +415,8 @@ app.post("/api/leads", async (req, res) => {
   try {
     const stored = await client.query(
       `insert into lead_submissions
-       (name, business_name, phone, email, business_type, monthly_processing_volume, current_processor, message, page_source, user_agent, ip_hash)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       (name, business_name, phone, email, business_type, monthly_processing_volume, current_processor, message, page_source, user_agent, ip_hash, status)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        returning id`,
       [
         lead.name,
@@ -169,7 +429,8 @@ app.post("/api/leads", async (req, res) => {
         lead.message,
         lead.page_source,
         userAgent,
-        ipHash
+        ipHash,
+        "New"
       ]
     );
     submissionId = stored.rows[0].id;
@@ -187,7 +448,7 @@ app.post("/api/leads", async (req, res) => {
 
     await client.query("update lead_submissions set email_alert_sent = true where id = $1", [submissionId]);
     console.info("lead_submission", { id: submissionId, emailSent, pageSource: lead.page_source });
-    return res.status(201).json({ ok: true, message: "Thanks. Your message was sent." });
+    return res.status(201).json({ ok: true, message: "Thanks. Your message was sent.", id: submissionId });
   } catch (error) {
     console.error("lead_submission_error", {
       id: submissionId,
