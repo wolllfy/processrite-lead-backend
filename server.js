@@ -16,7 +16,7 @@ const {
   SMTP_PORT = "587",
   SMTP_USER,
   SMTP_PASS,
-  ALLOWED_ORIGINS = "https://processrite.com,https://www.processrite.com,https://portal.processrite.com,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176",
+  ALLOWED_ORIGINS = "https://processrite.com,https://www.processrite.com,https://portal.processrite.com",
   IP_HASH_SECRET = "change-this-in-render",
   CRM_API_KEY = ""
 } = process.env;
@@ -28,7 +28,20 @@ const pool = DATABASE_URL
   ? new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } })
   : null;
 
-const allowedOrigins = ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean);
+const alwaysAllowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://127.0.0.1:5175",
+  "https://portal.processrite.com"
+];
+
+const allowedOrigins = Array.from(new Set([
+  ...ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean),
+  ...alwaysAllowedOrigins
+]));
 
 app.use(helmet());
 app.use(express.json({ limit: "64kb" }));
@@ -40,8 +53,19 @@ app.use(cors({
   }
 }));
 
-const leadSubmitLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false });
-const leadReadLimiter = rateLimit({ windowMs: 60 * 1000, limit: 240, standardHeaders: true, legacyHeaders: false });
+const leadSubmitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const crmReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 240,
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 const leadSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -60,8 +84,8 @@ const leadSchema = z.object({
 const leadUpdateSchema = z.object({
   status: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(5000).optional(),
+  assigned_to: z.string().trim().max(160).optional(),
   follow_up_date: z.string().trim().max(80).optional(),
-  assigned_to: z.string().trim().max(120).optional(),
   lead_score: z.string().trim().max(80).optional(),
   archived: z.boolean().optional()
 });
@@ -76,14 +100,19 @@ function requireEnv() {
 }
 
 function requireDatabase(res) {
-  if (pool) return true;
-  res.status(500).json({ ok: false, message: "Database is not configured." });
-  return false;
+  if (!pool) {
+    res.status(500).json({ ok: false, message: "Database is not configured." });
+    return false;
+  }
+  return true;
 }
 
 function requireCrmAccess(req, res) {
+  // Optional security: when CRM_API_KEY is set in Render, frontend must send x-crm-api-key.
+  // Leave CRM_API_KEY empty while testing so the portal can load leads immediately.
   if (!CRM_API_KEY) return true;
-  if (req.get("x-crm-api-key") === CRM_API_KEY) return true;
+  const provided = req.get("x-crm-api-key") || "";
+  if (provided === CRM_API_KEY) return true;
   res.status(401).json({ ok: false, message: "Unauthorized." });
   return false;
 }
@@ -138,12 +167,11 @@ function normalizeLead(row) {
     current_processor: row.current_processor || "",
     message: row.message || "",
     page_source: row.page_source || "",
-    user_agent: row.user_agent || "",
     email_alert_sent: Boolean(row.email_alert_sent),
     status: row.status || "New",
     notes: row.notes || "",
-    follow_up_date: row.follow_up_date || "",
     assigned_to: row.assigned_to || "",
+    follow_up_date: row.follow_up_date || "",
     lead_score: row.lead_score || "",
     archived: Boolean(row.archived)
   };
@@ -169,11 +197,11 @@ async function ensureSchema() {
       email_alert_sent boolean not null default false
     );
 
-    alter table lead_submissions add column if not exists status text not null default 'New';
-    alter table lead_submissions add column if not exists notes text not null default '';
-    alter table lead_submissions add column if not exists follow_up_date text not null default '';
-    alter table lead_submissions add column if not exists assigned_to text not null default '';
-    alter table lead_submissions add column if not exists lead_score text not null default '';
+    alter table lead_submissions add column if not exists status text default 'New';
+    alter table lead_submissions add column if not exists notes text default '';
+    alter table lead_submissions add column if not exists assigned_to text default '';
+    alter table lead_submissions add column if not exists follow_up_date text default '';
+    alter table lead_submissions add column if not exists lead_score text default '';
     alter table lead_submissions add column if not exists archived boolean not null default false;
 
     create index if not exists lead_submissions_created_at_idx on lead_submissions (created_at desc);
@@ -189,44 +217,45 @@ app.get("/health", (_req, res) => {
   return res.status(200).json({ ok: true });
 });
 
-app.get("/api/leads", leadReadLimiter, async (req, res) => {
+app.get("/api/leads", crmReadLimiter, async (req, res) => {
   if (!requireDatabase(res)) return;
   if (!requireCrmAccess(req, res)) return;
 
-  const search = String(req.query.search || "").trim().toLowerCase();
-  const status = String(req.query.status || "").trim();
-  const includeArchived = String(req.query.include_archived || "false") === "true";
   const limitRaw = Number(req.query.limit || 500);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 1000) : 500;
+  const search = String(req.query.search || "").trim();
+  const status = String(req.query.status || "").trim();
+  const includeArchived = String(req.query.include_archived || "false") === "true";
 
+  const params = [];
   const where = [];
-  const values = [];
 
   if (!includeArchived) where.push("coalesce(archived, false) = false");
 
   if (status && status !== "All") {
-    values.push(status);
-    where.push(`coalesce(status, 'New') = $${values.length}`);
+    params.push(status);
+    where.push(`coalesce(status, 'New') = $${params.length}`);
   }
 
   if (search) {
-    values.push(`%${search}%`);
+    params.push(`%${search.toLowerCase()}%`);
     where.push(`(
-      lower(coalesce(name, '')) like $${values.length}
-      or lower(coalesce(business_name, '')) like $${values.length}
-      or lower(coalesce(phone, '')) like $${values.length}
-      or lower(coalesce(email, '')) like $${values.length}
-      or lower(coalesce(business_type, '')) like $${values.length}
-      or lower(coalesce(current_processor, '')) like $${values.length}
-      or lower(coalesce(page_source, '')) like $${values.length}
+      lower(coalesce(name, '')) like $${params.length}
+      or lower(coalesce(business_name, '')) like $${params.length}
+      or lower(coalesce(phone, '')) like $${params.length}
+      or lower(coalesce(email, '')) like $${params.length}
+      or lower(coalesce(business_type, '')) like $${params.length}
+      or lower(coalesce(current_processor, '')) like $${params.length}
+      or lower(coalesce(page_source, '')) like $${params.length}
     )`);
   }
 
-  values.push(limit);
+  params.push(limit);
 
   try {
     const result = await pool.query(
-      `select
+      `
+      select
         id,
         created_at,
         name,
@@ -238,29 +267,33 @@ app.get("/api/leads", leadReadLimiter, async (req, res) => {
         current_processor,
         message,
         page_source,
-        user_agent,
         email_alert_sent,
         coalesce(status, 'New') as status,
         coalesce(notes, '') as notes,
-        coalesce(follow_up_date, '') as follow_up_date,
         coalesce(assigned_to, '') as assigned_to,
+        coalesce(follow_up_date, '') as follow_up_date,
         coalesce(lead_score, '') as lead_score,
         coalesce(archived, false) as archived
       from lead_submissions
       ${where.length ? `where ${where.join(" and ")}` : ""}
       order by created_at desc
-      limit $${values.length}`,
-      values
+      limit $${params.length}
+      `,
+      params
     );
 
-    return res.status(200).json({ ok: true, count: result.rows.length, leads: result.rows.map(normalizeLead) });
+    return res.status(200).json({
+      ok: true,
+      count: result.rows.length,
+      leads: result.rows.map(normalizeLead)
+    });
   } catch (error) {
     console.error("lead_list_error", { code: error.code || error.name, message: error.message });
     return res.status(500).json({ ok: false, message: "Unable to load leads.", code: error.code || error.name || "UNKNOWN" });
   }
 });
 
-app.get("/api/leads/stats", leadReadLimiter, async (req, res) => {
+app.get("/api/leads/stats", crmReadLimiter, async (req, res) => {
   if (!requireDatabase(res)) return;
   if (!requireCrmAccess(req, res)) return;
 
@@ -272,9 +305,9 @@ app.get("/api/leads/stats", leadReadLimiter, async (req, res) => {
         count(*) filter (where created_at >= date_trunc('month', now()))::int as this_month,
         count(*) filter (where coalesce(status, 'New') = 'New')::int as new_leads,
         count(*) filter (where coalesce(status, '') = 'Contacted')::int as contacted,
+        count(*) filter (where coalesce(status, '') = 'Follow Up')::int as follow_up,
         count(*) filter (where coalesce(status, '') = 'Statement Received')::int as statement_received,
         count(*) filter (where coalesce(status, '') = 'Pricing Sent')::int as pricing_sent,
-        count(*) filter (where coalesce(status, '') = 'Follow Up')::int as follow_up,
         count(*) filter (where coalesce(status, '') = 'Won')::int as won,
         count(*) filter (where coalesce(status, '') = 'Lost')::int as lost
       from lead_submissions
@@ -288,7 +321,7 @@ app.get("/api/leads/stats", leadReadLimiter, async (req, res) => {
   }
 });
 
-app.get("/api/leads/:id", leadReadLimiter, async (req, res) => {
+app.get("/api/leads/:id", crmReadLimiter, async (req, res) => {
   if (!requireDatabase(res)) return;
   if (!requireCrmAccess(req, res)) return;
 
@@ -297,7 +330,8 @@ app.get("/api/leads/:id", leadReadLimiter, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `select
+      `
+      select
         id,
         created_at,
         name,
@@ -309,16 +343,16 @@ app.get("/api/leads/:id", leadReadLimiter, async (req, res) => {
         current_processor,
         message,
         page_source,
-        user_agent,
         email_alert_sent,
         coalesce(status, 'New') as status,
         coalesce(notes, '') as notes,
-        coalesce(follow_up_date, '') as follow_up_date,
         coalesce(assigned_to, '') as assigned_to,
+        coalesce(follow_up_date, '') as follow_up_date,
         coalesce(lead_score, '') as lead_score,
         coalesce(archived, false) as archived
       from lead_submissions
-      where id = $1`,
+      where id = $1
+      `,
       [id]
     );
 
@@ -330,7 +364,7 @@ app.get("/api/leads/:id", leadReadLimiter, async (req, res) => {
   }
 });
 
-app.patch("/api/leads/:id", leadReadLimiter, async (req, res) => {
+app.patch("/api/leads/:id", crmReadLimiter, async (req, res) => {
   if (!requireDatabase(res)) return;
   if (!requireCrmAccess(req, res)) return;
 
@@ -354,10 +388,11 @@ app.patch("/api/leads/:id", leadReadLimiter, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `update lead_submissions
-       set ${fields.join(", ")}
-       where id = $${values.length}
-       returning
+      `
+      update lead_submissions
+      set ${fields.join(", ")}
+      where id = $${values.length}
+      returning
         id,
         created_at,
         name,
@@ -369,14 +404,14 @@ app.patch("/api/leads/:id", leadReadLimiter, async (req, res) => {
         current_processor,
         message,
         page_source,
-        user_agent,
         email_alert_sent,
         coalesce(status, 'New') as status,
         coalesce(notes, '') as notes,
-        coalesce(follow_up_date, '') as follow_up_date,
         coalesce(assigned_to, '') as assigned_to,
+        coalesce(follow_up_date, '') as follow_up_date,
         coalesce(lead_score, '') as lead_score,
-        coalesce(archived, false) as archived`,
+        coalesce(archived, false) as archived
+      `,
       values
     );
 
