@@ -18,7 +18,11 @@ const {
   SMTP_PASS,
   ALLOWED_ORIGINS = "https://processrite.com,https://www.processrite.com,https://portal.processrite.com",
   IP_HASH_SECRET = "change-this-in-render",
-  CRM_API_KEY = ""
+  CRM_API_KEY = "",
+  PORTAL_USERNAME = "wxsdom",
+  PORTAL_PASSWORD = "Beitanan",
+  AUTH_SECRET = IP_HASH_SECRET,
+  AUTH_SESSION_TTL_SECONDS = "28800"
 } = process.env;
 
 const app = express();
@@ -32,9 +36,13 @@ const alwaysAllowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:5175",
+  "http://localhost:5176",
+  "http://localhost:5177",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
   "http://127.0.0.1:5175",
+  "http://127.0.0.1:5176",
+  "http://127.0.0.1:5177",
   "https://portal.processrite.com"
 ];
 
@@ -65,6 +73,18 @@ const crmReadLimiter = rateLimit({
   limit: 240,
   standardHeaders: true,
   legacyHeaders: false
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const loginSchema = z.object({
+  username: z.string().trim().min(1).max(120),
+  password: z.string().min(1).max(240)
 });
 
 const leadSchema = z.object({
@@ -107,12 +127,54 @@ function requireDatabase(res) {
   return true;
 }
 
+function safeEqual(a = "", b = "") {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
+function signTokenPayload(payload) {
+  return crypto.createHmac("sha256", AUTH_SECRET).update(payload).digest("base64url");
+}
+
+function createAuthToken(username) {
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + Number(AUTH_SESSION_TTL_SECONDS || 28800);
+  const payload = Buffer.from(JSON.stringify({
+    sub: username,
+    iat: now,
+    exp: expiresAt,
+    scope: "crm"
+  })).toString("base64url");
+  const signature = signTokenPayload(payload);
+  return { token: `${payload}.${signature}`, expiresAt };
+}
+
+function verifyAuthToken(token = "") {
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature) return false;
+  const expected = signTokenPayload(payload);
+  if (!safeEqual(signature, expected)) return false;
+
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (data.scope !== "crm") return false;
+    if (!data.exp || Date.now() >= Number(data.exp) * 1000) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function requireCrmAccess(req, res) {
-  // Optional security: when CRM_API_KEY is set in Render, frontend must send x-crm-api-key.
-  // Leave CRM_API_KEY empty while testing so the portal can load leads immediately.
-  if (!CRM_API_KEY) return true;
   const provided = req.get("x-crm-api-key") || "";
-  if (provided === CRM_API_KEY) return true;
+  if (CRM_API_KEY && safeEqual(provided, CRM_API_KEY)) return true;
+
+  const authorization = req.get("authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  if (verifyAuthToken(token)) return true;
+
   res.status(401).json({ ok: false, message: "Unauthorized." });
   return false;
 }
@@ -217,9 +279,26 @@ app.get("/health", (_req, res) => {
   return res.status(200).json({ ok: true });
 });
 
+app.post("/api/auth/login", authLimiter, (req, res) => {
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, message: "Username and password are required." });
+
+  const { username, password } = parsed.data;
+  if (!safeEqual(username, PORTAL_USERNAME) || !safeEqual(password, PORTAL_PASSWORD)) {
+    return res.status(401).json({ ok: false, message: "Invalid credentials." });
+  }
+
+  const session = createAuthToken(username);
+  return res.status(200).json({
+    ok: true,
+    token: session.token,
+    expires_at: session.expiresAt
+  });
+});
+
 app.get("/api/leads", crmReadLimiter, async (req, res) => {
-  if (!requireDatabase(res)) return;
   if (!requireCrmAccess(req, res)) return;
+  if (!requireDatabase(res)) return;
 
   const limitRaw = Number(req.query.limit || 500);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 1000) : 500;
@@ -294,8 +373,8 @@ app.get("/api/leads", crmReadLimiter, async (req, res) => {
 });
 
 app.get("/api/leads/stats", crmReadLimiter, async (req, res) => {
-  if (!requireDatabase(res)) return;
   if (!requireCrmAccess(req, res)) return;
+  if (!requireDatabase(res)) return;
 
   try {
     const result = await pool.query(`
@@ -322,8 +401,8 @@ app.get("/api/leads/stats", crmReadLimiter, async (req, res) => {
 });
 
 app.get("/api/leads/:id", crmReadLimiter, async (req, res) => {
-  if (!requireDatabase(res)) return;
   if (!requireCrmAccess(req, res)) return;
+  if (!requireDatabase(res)) return;
 
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, message: "Invalid lead id." });
@@ -365,8 +444,8 @@ app.get("/api/leads/:id", crmReadLimiter, async (req, res) => {
 });
 
 app.patch("/api/leads/:id", crmReadLimiter, async (req, res) => {
-  if (!requireDatabase(res)) return;
   if (!requireCrmAccess(req, res)) return;
+  if (!requireDatabase(res)) return;
 
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, message: "Invalid lead id." });

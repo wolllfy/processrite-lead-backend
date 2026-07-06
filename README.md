@@ -13,6 +13,11 @@ This is a Render-ready lead endpoint for ProcessRite.com.
 - `SMTP_PASS`: SMTP password.
 - `ALLOWED_ORIGINS`: `https://processrite.com,https://www.processrite.com`.
 - `IP_HASH_SECRET`: long random string used to hash IPs before storage.
+- `PORTAL_USERNAME`: CRM login username.
+- `PORTAL_PASSWORD`: CRM login password.
+- `AUTH_SECRET`: long random string used to sign CRM session tokens.
+- `AUTH_SESSION_TTL_SECONDS`: optional CRM session duration, default `28800`.
+- `CRM_API_KEY`: optional service key. If set, the portal may also send `x-crm-api-key`.
 
 ## Deploy steps
 
@@ -22,6 +27,7 @@ This is a Render-ready lead endpoint for ProcessRite.com.
 4. Add the environment variables above.
 5. Confirm `https://YOUR-RENDER-SERVICE.onrender.com/health` returns `{"ok":true}`.
 6. Update WordPress forms to post to `https://YOUR-RENDER-SERVICE.onrender.com/api/leads`.
+7. Confirm the CRM can sign in through `POST /api/auth/login` and then read leads with the returned bearer token.
 
 ## WordPress form fields
 
