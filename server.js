@@ -241,6 +241,14 @@ function leadEmailText(lead, createdAt) {
   ].join("\n");
 }
 
+function safeError(error) {
+  const message = String(error?.message || "Unknown error")
+    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[database-url-redacted]")
+    .replace(/(password|passwd|pwd)=([^\s&]+)/gi, "$1=[redacted]")
+    .slice(0, 500);
+  return { code: error?.code || error?.name || "UNKNOWN", message };
+}
+
 function getMailer() {
   return nodemailer.createTransport({
     host: SMTP_HOST,
@@ -384,10 +392,18 @@ async function ensureSchema() {
   `);
 }
 
-app.get("/health", (_req, res) => {
+app.get("/health", async (_req, res) => {
   const missing = requireEnv();
   if (missing.length) return res.status(500).json({ ok: false, missing });
-  return res.status(200).json({ ok: true });
+  if (!pool) return res.status(503).json({ ok: false, database: "not_configured" });
+
+  try {
+    await pool.query("select 1");
+    return res.status(200).json({ ok: true, database: "connected" });
+  } catch (error) {
+    console.error("health_database_error", safeError(error));
+    return res.status(503).json({ ok: false, database: "unavailable" });
+  }
 });
 
 app.post("/api/auth/login", authLimiter, (req, res) => {
@@ -771,30 +787,32 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
 
     console.info("lead_submission_stored", { id: submissionId, pageSource: lead.page_source });
 
-    await getMailer().sendMail({
-      from: EMAIL_FROM,
-      to: EMAIL_TO,
-      replyTo: lead.email,
-      subject: `New Process Rite lead: ${lead.name}${lead.business_name ? ` at ${lead.business_name}` : ""}`,
-      text: leadEmailText(lead, createdAt)
-    });
-    emailSent = true;
+    try {
+      await getMailer().sendMail({
+        from: EMAIL_FROM,
+        to: EMAIL_TO,
+        replyTo: lead.email,
+        subject: `New Process Rite lead: ${lead.name}${lead.business_name ? ` at ${lead.business_name}` : ""}`,
+        text: leadEmailText(lead, createdAt)
+      });
+      emailSent = true;
+      await client.query("update lead_submissions set email_alert_sent = true where id = $1", [submissionId]);
+    } catch (error) {
+      console.error("lead_notification_error", { id: submissionId, ...safeError(error) });
+    }
 
-    await client.query("update lead_submissions set email_alert_sent = true where id = $1", [submissionId]);
     console.info("lead_submission", { id: submissionId, emailSent, pageSource: lead.page_source });
     return res.status(201).json({ ok: true, success: true, message: "Thanks. Your message was sent.", id: submissionId, leadId: String(submissionId) });
   } catch (error) {
     console.error("lead_submission_error", {
       id: submissionId,
       emailSent,
-      code: error.code || error.name,
-      message: error.message
+      ...safeError(error)
     });
     return res.status(500).json({
       ok: false,
       message: "Something went wrong. Please call or email Process Rite directly.",
-      code: error.code || error.name || "UNKNOWN",
-      detail: String(error.message || "").slice(0, 160)
+      code: error.code || error.name || "UNKNOWN"
     });
   } finally {
     client.release();
@@ -807,6 +825,6 @@ ensureSchema()
     app.listen(port, () => console.log(`Process Rite lead backend listening on ${port}`));
   })
   .catch((error) => {
-    console.error("schema_init_error", { code: error.code || error.name, message: error.message });
+    console.error("schema_init_error", safeError(error));
     process.exit(1);
   });

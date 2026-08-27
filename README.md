@@ -22,10 +22,10 @@ This is a Render-ready lead endpoint for ProcessRite.com.
 ## Deploy steps
 
 1. Create a Render Web Service from this folder.
-2. Create a Render Postgres database.
-3. Run `schema.sql` against the database.
-4. Add the environment variables above.
-5. Confirm `https://YOUR-RENDER-SERVICE.onrender.com/health` returns `{"ok":true}`.
+2. Create a dedicated Render Postgres database named `processrite-leads-db` in the same region as the web service.
+3. Set the web service's `DATABASE_URL` to that database's **Internal Database URL**. Do not use another product's database.
+4. Add the remaining environment variables above. The application initializes and safely upgrades its schema at startup using only `IF NOT EXISTS` operations; `schema.sql` is retained as a reference and is not required for normal deploys.
+5. Set Render's health-check path to `/health`, then confirm it returns `{"ok":true,"database":"connected"}`.
 6. Update WordPress forms to post to `https://YOUR-RENDER-SERVICE.onrender.com/api/leads`.
 7. Confirm the CRM can sign in through `POST /api/auth/login` and then read leads with the returned bearer token.
 
@@ -45,4 +45,4 @@ Every lead form should submit:
 - `timestamp`
 - `company` as a hidden honeypot field that should stay empty.
 
-The endpoint stores the lead in Postgres and emails `EMAIL_TO`. Logs include only submission id, source URL, and error category, not full customer details.
+The endpoint stores the lead in Postgres and then emails `EMAIL_TO`. A mail failure is logged and leaves `email_alert_sent=false`, but does not tell the visitor that their safely stored lead failed. Logs redact database URLs and password-style fields.
