@@ -51,6 +51,19 @@ const allowedOrigins = Array.from(new Set(
   (ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean)
 ));
 
+function rateLimitHandler(req, res, _next, options) {
+  console.warn("rate_limit_exceeded", {
+    method: req.method,
+    path: req.path,
+    ipHash: hashIp(req.ip || "unknown").slice(0, 16)
+  });
+  return res.status(options.statusCode).json({
+    ok: false,
+    message: "Too many requests. Please try again later.",
+    code: "RATE_LIMITED"
+  });
+}
+
 app.use(helmet());
 app.use(express.json({ limit: "64kb" }));
 app.use(express.urlencoded({ extended: false, limit: "64kb" }));
@@ -65,21 +78,24 @@ const leadSubmitLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 8,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  handler: rateLimitHandler
 });
 
 const crmReadLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 240,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  handler: rateLimitHandler
 });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  handler: rateLimitHandler
 });
 
 const loginSchema = z.object({
@@ -840,7 +856,10 @@ if (missingEnvironmentVariables.length) {
   process.exit(1);
 }
 
-console.info("startup_begin", { version: process.env.RENDER_GIT_COMMIT || "unknown" });
+console.info("startup_begin", {
+  version: process.env.RENDER_GIT_COMMIT || "unknown",
+  trustProxyHops: app.get("trust proxy")
+});
 ensureSchema()
   .then(() => {
     console.info("database_schema_ready");
