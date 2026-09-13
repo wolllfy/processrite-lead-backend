@@ -19,6 +19,10 @@ This is a Render-ready lead endpoint for ProcessRite.com.
 - `AUTH_SESSION_TTL_SECONDS`: optional CRM session duration, default `28800`.
 - `CRM_API_KEY`: optional service key. If set, the portal may also send `x-crm-api-key`.
 
+All authentication, hashing, SMTP, and database credentials must be supplied through
+the deployment environment. The application has no credential fallbacks. Copy
+`.env.example` only for local setup and never commit a populated `.env` file.
+
 ## Deploy steps
 
 1. Create a Render Web Service from this folder.

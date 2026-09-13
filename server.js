@@ -11,19 +11,34 @@ import { z } from "zod";
 const {
   DATABASE_URL,
   EMAIL_FROM,
-  EMAIL_TO = "wolllfyx@gmail.com",
+  EMAIL_TO,
   SMTP_HOST,
-  SMTP_PORT = "587",
+  SMTP_PORT,
   SMTP_USER,
   SMTP_PASS,
-  ALLOWED_ORIGINS = "https://processrite.com,https://www.processrite.com,https://portal.processrite.com",
-  IP_HASH_SECRET = "change-this-in-render",
-  CRM_API_KEY = "",
-  PORTAL_USERNAME = "wxsdom",
-  PORTAL_PASSWORD = "Beitanan",
-  AUTH_SECRET = IP_HASH_SECRET,
+  ALLOWED_ORIGINS,
+  IP_HASH_SECRET,
+  CRM_API_KEY,
+  PORTAL_USERNAME,
+  PORTAL_PASSWORD,
+  AUTH_SECRET,
   AUTH_SESSION_TTL_SECONDS = "28800"
 } = process.env;
+
+const requiredEnvironmentVariables = [
+  "DATABASE_URL",
+  "EMAIL_FROM",
+  "EMAIL_TO",
+  "SMTP_HOST",
+  "SMTP_PORT",
+  "SMTP_USER",
+  "SMTP_PASS",
+  "ALLOWED_ORIGINS",
+  "IP_HASH_SECRET",
+  "PORTAL_USERNAME",
+  "PORTAL_PASSWORD",
+  "AUTH_SECRET"
+];
 
 const app = express();
 app.set("trust proxy", 1);
@@ -32,24 +47,9 @@ const pool = DATABASE_URL
   ? new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } })
   : null;
 
-const alwaysAllowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:5175",
-  "http://localhost:5176",
-  "http://localhost:5177",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
-  "http://127.0.0.1:5175",
-  "http://127.0.0.1:5176",
-  "http://127.0.0.1:5177",
-  "https://portal.processrite.com"
-];
-
-const allowedOrigins = Array.from(new Set([
-  ...ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean),
-  ...alwaysAllowedOrigins
-]));
+const allowedOrigins = Array.from(new Set(
+  (ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean)
+));
 
 app.use(helmet());
 app.use(express.json({ limit: "64kb" }));
@@ -146,12 +146,7 @@ const leadUpdateSchema = z.object({
 });
 
 function requireEnv() {
-  const missing = [];
-  for (const key of ["DATABASE_URL", "EMAIL_FROM", "EMAIL_TO", "SMTP_HOST", "SMTP_USER", "SMTP_PASS"]) {
-    if (!process.env[key]) missing.push(key);
-  }
-  if (process.env.SMTP_PASS === "REPLACE_WITH_GMAIL_APP_PASSWORD") missing.push("SMTP_PASS");
-  return missing;
+  return requiredEnvironmentVariables.filter((key) => !process.env[key]);
 }
 
 function requireDatabase(res) {
@@ -245,6 +240,7 @@ function safeError(error) {
   const message = String(error?.message || "Unknown error")
     .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[database-url-redacted]")
     .replace(/(password|passwd|pwd)=([^\s&]+)/gi, "$1=[redacted]")
+    .replace(/(authorization|token|secret|api[_-]?key)[=: ]+[^\s,;]+/gi, "$1=[redacted]")
     .slice(0, 500);
   return { code: error?.code || error?.name || "UNKNOWN", message };
 }
@@ -394,15 +390,15 @@ async function ensureSchema() {
 
 app.get("/health", async (_req, res) => {
   const missing = requireEnv();
-  if (missing.length) return res.status(500).json({ ok: false, missing });
+  if (missing.length) return res.status(503).json({ app: "error", database: "not_checked", version: process.env.RENDER_GIT_COMMIT || "unknown" });
   if (!pool) return res.status(503).json({ ok: false, database: "not_configured" });
 
   try {
     await pool.query("select 1");
-    return res.status(200).json({ ok: true, database: "connected" });
+    return res.status(200).json({ app: "ok", database: "ok", version: process.env.RENDER_GIT_COMMIT || "unknown" });
   } catch (error) {
     console.error("health_database_error", safeError(error));
-    return res.status(503).json({ ok: false, database: "unavailable" });
+    return res.status(503).json({ app: "ok", database: "error", version: process.env.RENDER_GIT_COMMIT || "unknown" });
   }
 });
 
@@ -820,9 +816,17 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
+const missingEnvironmentVariables = requireEnv();
+if (missingEnvironmentVariables.length) {
+  console.error("startup_configuration_error", { missingVariables: missingEnvironmentVariables });
+  process.exit(1);
+}
+
+console.info("startup_begin", { version: process.env.RENDER_GIT_COMMIT || "unknown" });
 ensureSchema()
   .then(() => {
-    app.listen(port, () => console.log(`Process Rite lead backend listening on ${port}`));
+    console.info("database_schema_ready");
+    app.listen(port, () => console.info("startup_ready", { port, version: process.env.RENDER_GIT_COMMIT || "unknown" }));
   })
   .catch((error) => {
     console.error("schema_init_error", safeError(error));
