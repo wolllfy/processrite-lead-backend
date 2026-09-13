@@ -815,6 +815,24 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
   }
 });
 
+app.use((error, _req, res, _next) => {
+  const isCorsRejection = error?.message === "Origin not allowed";
+  const isMalformedJson = error instanceof SyntaxError && error?.status === 400 && "body" in error;
+  const status = isCorsRejection ? 403 : isMalformedJson ? 400 : 500;
+  const code = isCorsRejection ? "CORS_REJECTED" : isMalformedJson ? "INVALID_JSON" : "REQUEST_ERROR";
+
+  console.error("request_error", { status, code, ...safeError(error) });
+  return res.status(status).json({
+    ok: false,
+    message: isCorsRejection
+      ? "Origin is not allowed."
+      : isMalformedJson
+        ? "Request body must contain valid JSON."
+        : "Request could not be completed.",
+    code
+  });
+});
+
 const port = process.env.PORT || 3000;
 const missingEnvironmentVariables = requireEnv();
 if (missingEnvironmentVariables.length) {
