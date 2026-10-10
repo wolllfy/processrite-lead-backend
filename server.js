@@ -9,6 +9,7 @@ import pg from "pg";
 import { z } from "zod";
 import { databaseOptions } from "./lib/database.js";
 import { mountManagedAccounts } from "./lib/account-adapter.js";
+import { mountProcessRiteReports } from "./lib/daily-report.js";
 
 const {
   DATABASE_URL,
@@ -96,6 +97,7 @@ const authLimiter = rateLimit({
 });
 
 mountManagedAccounts(app,{pool,env:process.env,authLimiter});
+mountProcessRiteReports(app,{pool,env:process.env,limiter:authLimiter});
 
 const loginSchema = z.object({
   username: z.string().trim().min(1).max(120),

@@ -50,3 +50,11 @@ Every lead form should submit:
 - `company` as a hidden honeypot field that should stay empty.
 
 The endpoint stores the lead in Postgres and then emails `EMAIL_TO`. A mail failure is logged and leaves `email_alert_sent=false`, but does not tell the visitor that their safely stored lead failed. Logs redact database URLs and password-style fields.
+
+Daily Process Rite report
+Runs at 9 PM America/New_York on the existing backend (one-minute checks). Recipient is muheisenone@outlook.com; sender and SMTP credentials come from the existing Process Rite EMAIL_FROM/SMTP_* configuration. Muheisen email credentials are never used.
+Enabled by default for this approved rollout. Set PROCESSRITE_DAILY_REPORT_ENABLED=false to stop scheduled reports. GET /api/reports/daily shows status/history; POST /api/reports/daily/test sends a fixed-recipient test. Both require an active administrator session.
+No schema migration: claims and delivery outcomes use crm_access_events. PostgreSQL transaction advisory lock serializes claims across instances. After a claim, failures or uncertain acceptance are not automatically resent. Check Outlook and delivery history before manual testing again.
+Coverage: lead totals, last-24-hour submissions, current pipeline counts, source/page label/URL attribution, up to 25 recent leads, up to 25 recorded follow-up dates, unsent lead-alert flags. Excludes raw contact details, transcripts, recordings and payment-card data. Does not measure commissions/residuals, live website uptime, backup health or historical pipeline conversion.
+Reliability: catches up during the same evening after a restart; a full outage from 9 PM through midnight can miss a report. Runs only while the existing backend is running. No new hosting subscription.
+Rollback: set PROCESSRITE_DAILY_REPORT_ENABLED=false, then revert the report commit if needed. Do not delete report claim events while scheduling is enabled. Public lead intake is unchanged.
