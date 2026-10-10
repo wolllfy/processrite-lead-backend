@@ -4,16 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "check": "node --check server.js && node --check lib/account-adapter.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2",
+    "express": "^4.22.3",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
-    "nodemailer": "^9.0.3",
-    "pg": "^8.13.1",
+    "nodemailer": "^10.0.16",
+    "pg": "^8.23.1",
     "qs": "6.16.0",
     "zod": "^3.24.1"
   },
@@ -21,6 +24,12 @@
     "qs": "6.16.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24.0.0 <25"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "eslint": "^10.12.0",
+    "supertest": "^7.3.1",
+    "vitest": "^5.0.3"
   }
 }

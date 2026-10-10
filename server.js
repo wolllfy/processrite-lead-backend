@@ -7,6 +7,8 @@ import nodemailer from "nodemailer";
 import rateLimit from "express-rate-limit";
 import pg from "pg";
 import { z } from "zod";
+import { databaseOptions } from "./lib/database.js";
+import { mountManagedAccounts } from "./lib/account-adapter.js";
 
 const {
   DATABASE_URL,
@@ -18,9 +20,6 @@ const {
   SMTP_PASS,
   ALLOWED_ORIGINS,
   IP_HASH_SECRET,
-  CRM_API_KEY,
-  PORTAL_USERNAME,
-  PORTAL_PASSWORD,
   AUTH_SECRET,
   AUTH_SESSION_TTL_SECONDS = "28800"
 } = process.env;
@@ -35,8 +34,6 @@ const requiredEnvironmentVariables = [
   "SMTP_PASS",
   "ALLOWED_ORIGINS",
   "IP_HASH_SECRET",
-  "PORTAL_USERNAME",
-  "PORTAL_PASSWORD",
   "AUTH_SECRET"
 ];
 
@@ -44,7 +41,7 @@ const app = express();
 app.set("trust proxy", 1);
 
 const pool = DATABASE_URL
-  ? new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  ? new pg.Pool(databaseOptions())
   : null;
 
 const allowedOrigins = Array.from(new Set(
@@ -97,6 +94,8 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   handler: rateLimitHandler
 });
+
+mountManagedAccounts(app,{pool,env:process.env,authLimiter});
 
 const loginSchema = z.object({
   username: z.string().trim().min(1).max(120),
@@ -173,56 +172,9 @@ function requireDatabase(res) {
   return true;
 }
 
-function safeEqual(a = "", b = "") {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return crypto.timingSafeEqual(left, right);
-}
-
-function signTokenPayload(payload) {
-  return crypto.createHmac("sha256", AUTH_SECRET).update(payload).digest("base64url");
-}
-
-function createAuthToken(username) {
-  const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + Number(AUTH_SESSION_TTL_SECONDS || 28800);
-  const payload = Buffer.from(JSON.stringify({
-    sub: username,
-    iat: now,
-    exp: expiresAt,
-    scope: "crm"
-  })).toString("base64url");
-  const signature = signTokenPayload(payload);
-  return { token: `${payload}.${signature}`, expiresAt };
-}
-
-function verifyAuthToken(token = "") {
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature) return false;
-  const expected = signTokenPayload(payload);
-  if (!safeEqual(signature, expected)) return false;
-
-  try {
-    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    if (data.scope !== "crm") return false;
-    if (!data.exp || Date.now() >= Number(data.exp) * 1000) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function requireCrmAccess(req, res) {
-  const provided = req.get("x-crm-api-key") || "";
-  if (CRM_API_KEY && safeEqual(provided, CRM_API_KEY)) return true;
-
-  const authorization = req.get("authorization") || "";
-  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-  if (verifyAuthToken(token)) return true;
-
-  res.status(401).json({ ok: false, message: "Unauthorized." });
-  return false;
+function requireCrmAccess(req,res) {
+ if(req.user) return true;
+ res.status(401).json({ok:false,message:'Unauthorized.'});return false;
 }
 
 function hashIp(rawIp = "") {
@@ -349,59 +301,9 @@ function normalizeInboundLead(input) {
 }
 
 async function ensureSchema() {
-  if (!pool) return;
-  await pool.query(`
-    create table if not exists lead_submissions (
-      id bigserial primary key,
-      created_at timestamptz not null default now(),
-      name text not null,
-      business_name text,
-      phone text not null,
-      email text not null,
-      business_type text not null,
-      monthly_processing_volume text not null,
-      current_processor text,
-      message text,
-      page_source text,
-      user_agent text,
-      ip_hash text,
-      email_alert_sent boolean not null default false
-    );
-
-    alter table lead_submissions add column if not exists status text default 'New';
-    alter table lead_submissions add column if not exists updated_at timestamptz not null default now();
-    alter table lead_submissions add column if not exists monthly_volume text default '';
-    alter table lead_submissions add column if not exists average_ticket text default '';
-    alter table lead_submissions add column if not exists interested_products text default '';
-    alter table lead_submissions add column if not exists pain_points text default '';
-    alter table lead_submissions add column if not exists call_type text default '';
-    alter table lead_submissions add column if not exists lead_source text default '';
-    alter table lead_submissions add column if not exists source_url text default '';
-    alter table lead_submissions add column if not exists priority text default 'Medium';
-    alter table lead_submissions add column if not exists summary text default '';
-    alter table lead_submissions add column if not exists notes text default '';
-    alter table lead_submissions add column if not exists ai_summary text default '';
-    alter table lead_submissions add column if not exists ai_score text default '';
-    alter table lead_submissions add column if not exists transcript text default '';
-    alter table lead_submissions add column if not exists recording_url text default '';
-    alter table lead_submissions add column if not exists call_duration text default '';
-    alter table lead_submissions add column if not exists call_date text default '';
-    alter table lead_submissions add column if not exists sms_consent boolean not null default false;
-    alter table lead_submissions add column if not exists sms_consent_method text default '';
-    alter table lead_submissions add column if not exists sms_consent_timestamp text default '';
-    alter table lead_submissions add column if not exists assigned_to text default '';
-    alter table lead_submissions add column if not exists follow_up_date text default '';
-    alter table lead_submissions add column if not exists last_contacted_at text default '';
-    alter table lead_submissions add column if not exists lead_score text default '';
-    alter table lead_submissions add column if not exists archived boolean not null default false;
-
-    create index if not exists lead_submissions_created_at_idx on lead_submissions (created_at desc);
-    create index if not exists lead_submissions_email_idx on lead_submissions (lower(email));
-    create index if not exists lead_submissions_status_idx on lead_submissions (status);
-    create index if not exists lead_submissions_priority_idx on lead_submissions (priority);
-    create index if not exists lead_submissions_lead_source_idx on lead_submissions (lead_source);
-    create index if not exists lead_submissions_archived_idx on lead_submissions (archived);
-  `);
+ await pool.query('SELECT id FROM lead_submissions LIMIT 0');
+ const ready=await pool.query("SELECT count(*)::int n FROM crm_users WHERE role='admin' AND status='active' AND password_hash IS NOT NULL");
+ if(!ready.rows[0].n)throw Error('An active administrator must be bootstrapped before deployment');
 }
 
 app.get("/health", async (_req, res) => {
@@ -416,23 +318,6 @@ app.get("/health", async (_req, res) => {
     console.error("health_database_error", safeError(error));
     return res.status(503).json({ app: "ok", database: "error", version: process.env.RENDER_GIT_COMMIT || "unknown" });
   }
-});
-
-app.post("/api/auth/login", authLimiter, (req, res) => {
-  const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, message: "Username and password are required." });
-
-  const { username, password } = parsed.data;
-  if (!safeEqual(username, PORTAL_USERNAME) || !safeEqual(password, PORTAL_PASSWORD)) {
-    return res.status(401).json({ ok: false, message: "Invalid credentials." });
-  }
-
-  const session = createAuthToken(username);
-  return res.status(200).json({
-    ok: true,
-    token: session.token,
-    expires_at: session.expiresAt
-  });
 });
 
 app.get("/api/leads", crmReadLimiter, async (req, res) => {
