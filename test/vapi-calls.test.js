@@ -97,7 +97,11 @@ it('exposes precise CRM notification states without claiming inbox delivery',asy
 });
 it('returns a safe retryable response when backend connection times out',async()=>{
  const app=express();app.use(express.json());const stop=mountVapiCalls(app,{pool:{connect:async()=>{throw Object.assign(Error('Synthetic database timeout'),{code:'ETIMEDOUT'});}},env:{VAPI_WEBHOOK_SECRET:'test-secret'},send:vi.fn()});
- try{const body={name:'Synthetic Timeout',phone:'9735550999',call_id:'test-call-001',assistant_id:assistantId,call_type_provider:'inboundPhoneCall'};const r=await request(app).post('/api/vapi/lead').set('x-vapi-secret','test-secret').send(body);expect(r.status).toBe(500);expect(r.body).toEqual({ok:false});}finally{stop();}
+ try{const body={name:'Synthetic Timeout',phone:'9735550999',call_id:'test-call-001',assistant_id:assistantId,call_type_provider:'inboundPhoneCall'};const r=await request(app).post('/api/vapi/lead').set('x-vapi-secret','test-secret').send(body);expect(r.status).toBe(500);expect(r.body).toEqual({ok:false,code:'storage_failure'});}finally{stop();}
+});
+it('diagnoses credential rejection without exposing headers or customer data',async()=>{
+ const log=vi.spyOn(console,'error').mockImplementation(()=>{});const app=express();app.use(express.json());const stop=mountVapiCalls(app,{pool,env:{VAPI_WEBHOOK_SECRET:'test-secret'},send:vi.fn()});
+ try{const r=await request(app).post('/api/vapi/lead').set('x-vapi-secret','private-wrong-token').send({phone:'private-customer-phone'});expect(r.status).toBe(401);expect(r.body.code).toBe('authentication_failed');expect(log).toHaveBeenCalledWith('vapi_lead_auth_rejected',{secretHeaderPresent:true,authorizationPresent:false});expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-wrong-token|private-customer-phone/);}finally{stop();log.mockRestore();}
 });
 it('rolls back lead changes on storage failure, allowing a clean retry',async()=>{
  const failed={connect:async()=>{const c=await pool.connect();return {...c,query:(sql,args)=>sql.startsWith('INSERT INTO vapi_call_events')?Promise.reject(Error('Synthetic write failure')):c.query(sql,args)};}};
