@@ -1,4 +1,4 @@
-Current status, October 14, 2026: backend c307ace, portal dcad259, Riley v9 and LogLead v5. Real voice save succeeded; callback digits were verified and corrected, and the correction alert was provider-accepted. All 55 backend tests pass. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md). Baseline observations below are historical.
+Current status, October 14, 2026: backend d558ba0, portal dcad259, Sarah v12 and LogLead v5. Real voice save succeeded; callback digits were verified and corrected, and the correction alert was provider-accepted. All 61 backend tests pass. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md). Baseline observations below are historical.
 # CRM and database audit
 Primary tables: lead_submissions; vapi_call_events with call_id primary key, lead_id foreign key, caller phone, completion state, attempts, next attempt and SMTP-acceptance timestamp; processrite_sms_messages keyed by MessageSid.
 

@@ -1,3 +1,18 @@
+# Latest verification — October 14, 2026, 7:15 PM Eastern
+
+Backend d558ba0 is deployed. Sarah v12 is published at 100% traffic, using the same assistant ID and MiniMax Cheerful Sophie Agent voice. Her greeting is: "Thank you for calling Process Rite. This is Sarah. How can I help you?" She does not introduce herself as a virtual assistant, but answers truthfully if asked whether automated. Live owner transfer remains unavailable.
+
+The latest real call, 01a13ca2-1497-7112-9017-2efc72e2955e at 6:56 PM Eastern, used the historical Riley v9 configuration. LogLead succeeded and created lead 30. The model omitted one callback digit; subsequent completion stored a different wrong number. The caller had confirmed by repeating the same digits after the read-back. The new deterministic guard accepts this identical repetition, rejects a changed or explicitly disputed number, and still requires the successful LogLead result for the same lead.
+
+The original stored dialogue and actual provider tool success were replayed through the authenticated completion endpoint. Lead 30 now has the exact confirmed ten-digit callback, stated business type "bagel shop", a Process Rite summary, sales type, Medium priority, New stage, transcript, date and 108.51-second duration. Business name, monthly volume and processor remain blank because the caller did not state them. There is one call row. No historical contact was merged or deleted.
+
+The first email had the incorrect callback. One clearly marked correction was queued and provider-accepted on its first attempt at 2026-10-14T23:14:49.966Z. Inbox receipt is not independently verified: CRM is currently at sign-in and no info@processrite.com inbox is open. Provider acceptance must not be described as inbox delivery.
+
+The trace shows approximately 21 seconds between the callback digits and the idle check-in. This alone does not establish that coughing caused it. Stop-speaking word threshold is now 1, leaving voice seconds 0.2 and backoff 1 unchanged. This uses transcribed words rather than the previous threshold-0 noise-sensitive interruption behavior. Prompt instructions require prompt read-back, no internal field/tool narration, carrying known facts forward and closing after "that's all". These changes are published; live cough behavior remains untested.
+
+All 61 backend tests in five files passed, including numeric-repeat confirmation, changed-number rejection, stated business type, low-confidence rejection, correction alerts and brand spelling. Lint passed. No new phone or AI call was initiated for this final repair.
+
+The earlier chronological observations below are retained as historical evidence; they do not supersede this latest verification.
 # Production validation — October 14, 2026
 
 ## Final live validation
