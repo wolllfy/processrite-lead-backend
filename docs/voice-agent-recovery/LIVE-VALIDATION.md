@@ -43,6 +43,14 @@ Twilio automatic HELP/STOP/START responses are not exposed as ordinary Messaging
 
 ## Remaining boundaries
 
+### Evening follow-up, 6:15 PM Eastern
+
+Call `01a13c7c-58fd-7ffb-b203-206d7b2bda65` confirmed the remaining error precisely: both LogLead attempts returned `authentication_failed`. Render recorded `secretHeaderPresent:true`, `authorizationPresent:false`, proving a present but mismatched token rather than a storage failure. The earlier credential correction had used the assistant's displayed header value; this was not a verified source of the live server secret. The credential was corrected using the revealed existing `VAPI_WEBHOOK_SECRET` directly from Render, re-hidden immediately, and saved in Vapi without printing or persisting its value in this report.
+
+The failed call's actual model arguments were replayed once through the authenticated backend, with call context taken from its existing database event. Response 201, `ok:true`, lead 24. Verification confirmed name/callback, completion, transcript, date and duration together on that original call record. The existing email was provider-accepted; no duplicate alert was forced. This was explicit recovery of a failed request, not proof of a new successful Vapi tool execution.
+
+Vapi balance was 0.06 credits after this call. The owner was asked to top up manually or leave final live confirmation pending. No credit purchase was made. CRM browser authentication expired when refreshing; database verification was used for the recovered fields, and no fresh browser screenshot of the recovered lead is claimed.
+
 Original split Tony records 24/27 were preserved; no historical merge was approved or performed. The legacy public `/api/leads` Vapi branch remains for rollback and should be retired after authenticated LogLead is proven. Real PostgreSQL concurrent-worker and SMTP outage injection are still staging-only checks. These limitations must remain visible rather than treating mock tests as end-to-end proof.
 
 References: [Vapi API Request configuration](https://docs.vapi.ai/tools/api-request/configuration), [default variables](https://docs.vapi.ai/assistants/dynamic-variables), [Twilio Advanced Opt-Out](https://www.twilio.com/docs/messaging/tutorials/advanced-opt-out), [Twilio automatic-response tracking](https://help.twilio.com/articles/31560110671259-How-to-Track-Opt-Out-Opt-In-and-Help-Messages-Using-the-OptOutType-Parameter).
