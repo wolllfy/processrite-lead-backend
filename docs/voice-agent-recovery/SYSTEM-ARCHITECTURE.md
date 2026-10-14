@@ -1,4 +1,4 @@
-Current status, October 14, 2026: approved repairs are deployed. Backend f7f1c7d; portal dcad259; Riley v9; LogLead v5 with a replacement standard Bearer credential. Free computer validation passed; real Vapi voice confirmation remains pending. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md). The baseline observations below are historical and do not describe the current deployment.
+Current status, October 14, 2026: backend c307ace, portal dcad259, Riley v9 and LogLead v5. Real voice save succeeded; callback digits were verified and corrected, and the correction alert was provider-accepted. All 55 backend tests pass. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md). Baseline observations below are historical.
 # Verified system architecture
 Incoming public number 973-314-2419 → Twilio voice route → Vapi Riley v4 → LogLead API Request v2 → Render /api/leads → PostgreSQL lead_submissions → portal.processrite.com.
 Separately: authenticated Vapi status/end-of-call events → /api/vapi/events → vapi_call_events → call-alert worker → Nodemailer SMTP → configured owner recipient.

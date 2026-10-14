@@ -1,4 +1,4 @@
-Current status, October 14, 2026: approved repairs are deployed. Backend f7f1c7d; portal dcad259; Riley v9; LogLead v5 with a replacement standard Bearer credential. Free computer validation passed; real Vapi voice confirmation remains pending. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md). The baseline observations below are historical and do not describe the current deployment.
+Current status, October 14, 2026: backend c307ace, portal dcad259, Riley v9 and LogLead v5. Real voice save succeeded; callback digits were verified and corrected, and the correction alert was provider-accepted. All 55 backend tests pass. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md). Baseline observations below are historical.
 # Controlled live validation
 Before production changes: approve backend and LogLead configuration proposal, preserve exported previous tool config privately, confirm rollback commit, select internal recipient info@processrite.com and obtain authorization for the test call and backend email. No credential rotation or migration.
 

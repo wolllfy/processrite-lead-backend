@@ -1,5 +1,17 @@
 # Production validation — October 14, 2026
 
+## Final live validation
+
+Real inbound call `01a13c91-1a08-7773-99a9-3ea7f90e081a`, October 14 at 6:38 PM Eastern, used Riley v9 and LogLead v5. Vapi displayed LogLead completed successfully and Riley acknowledged saving the owner callback. The correlated lead is 29, with name, general request type, Medium priority, transcript, date, duration and provider-accepted alert. This proves the replacement standard Bearer credential works in a real voice call.
+
+Digit verification then caught a model error: the saved callback ended 6077 while the caller and Riley's agreed read-back ended 6067. Commit `270463b` now derives corrections only from authenticated provider messages containing the caller's number, an identical bot read-back, explicit confirmation, and a successful LogLead result for that same lead ID. It never substitutes caller ID or trusts a model-generated transcript. Ambiguous responses, mismatched read-backs and unrelated lead IDs leave the record unchanged. Provider message roles `user`, `bot`, `tool_calls`, `tool_call_result` and the actual success result were inspected in Vapi's Messages view.
+
+The original stored dialogue plus the actual provider tool result were replayed through the authenticated completion endpoint to repair this existing call, without another AI or phone call. The corrected ten-digit callback now exactly matches the spoken digits. A clearly marked correction alert was queued because the original accepted alert had the wrong number. The correction reached provider acceptance on one attempt. Repeated completion events do not queue another correction; retry Message-IDs remain stable per call and callback, while a materially changed callback gets a distinct ID. Original transcript, date and duration were retained. No historical contact merge or deletion occurred.
+
+All 55 backend tests in five files pass, including the digit regression, explicit-versus-ambiguous confirmation, country code, spoken number words, unrelated contact protection, correction alerts and duplicate events. Lint and syntax checks pass. `c307ace` retired the legacy unauthenticated Vapi branch of `/api/leads`; production verification returned 410 for a synthetic legacy voice request and 200 for the unchanged website honeypot guard. Public app/database health reported the deployed commit. No database migration or new secret was introduced.
+
+Voice callback capture, authenticated saving, call correlation, corrected callback and provider alert acceptance are now verified. Backend inbox receipt is still not independently confirmed. Live transfer to the owner is not configured; Riley records a callback. Existing support SMS delivery/opt-out tests are recorded below. Staging-only concurrent-worker and SMTP outage injection remain separate tests.
+
 ## Latest computer-only validation, 6:38 PM Eastern
 
 After call `01a13c87-6cfe-7ffb-b281-9c748e90d0c5` still returned `authentication_failed`, the owner requested computer testing to avoid further credit use. No additional phone or AI chat was initiated. Vapi's free tool-test panel does not populate the stored credential in its displayed request; its AI chat panel requires a payment method, so neither is claimed as runtime authentication proof.
@@ -61,6 +73,6 @@ The failed call's actual model arguments were replayed once through the authenti
 
 Vapi balance was 0.06 credits after this call. The owner was asked to top up manually or leave final live confirmation pending. No credit purchase was made. CRM browser authentication expired when refreshing; database verification was used for the recovered fields, and no fresh browser screenshot of the recovered lead is claimed.
 
-Original split Tony records 24/27 were preserved; no historical merge was approved or performed. The legacy public `/api/leads` Vapi branch remains for rollback and should be retired after authenticated LogLead is proven. Real PostgreSQL concurrent-worker and SMTP outage injection are still staging-only checks. These limitations must remain visible rather than treating mock tests as end-to-end proof.
+Original split Tony records 24/27 were preserved; no historical merge was approved or performed. The legacy public voice-intake branch is now retired as documented in the final validation above. Real PostgreSQL concurrent-worker and SMTP outage injection are still staging-only checks. These limitations must remain visible rather than treating mock tests as end-to-end proof.
 
 References: [Vapi API Request configuration](https://docs.vapi.ai/tools/api-request/configuration), [default variables](https://docs.vapi.ai/assistants/dynamic-variables), [Twilio Advanced Opt-Out](https://www.twilio.com/docs/messaging/tutorials/advanced-opt-out), [Twilio automatic-response tracking](https://help.twilio.com/articles/31560110671259-How-to-Track-Opt-Out-Opt-In-and-Help-Messages-Using-the-OptOutType-Parameter).
