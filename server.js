@@ -98,9 +98,9 @@ const authLimiter = rateLimit({
   handler: rateLimitHandler
 });
 
+mountVapiCalls(app,{pool,env:process.env,send:message=>getMailer().sendMail(message)});
 mountManagedAccounts(app,{pool,env:process.env,authLimiter});
 mountProcessRiteReports(app,{pool,env:process.env,limiter:authLimiter});
-mountVapiCalls(app,{pool,env:process.env,send:message=>getMailer().sendMail(message)});
 
 const loginSchema = z.object({
   username: z.string().trim().min(1).max(120),
