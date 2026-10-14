@@ -103,6 +103,11 @@ it('diagnoses credential rejection without exposing headers or customer data',as
  const log=vi.spyOn(console,'error').mockImplementation(()=>{});const app=express();app.use(express.json());const stop=mountVapiCalls(app,{pool,env:{VAPI_WEBHOOK_SECRET:'test-secret'},send:vi.fn()});
  try{const r=await request(app).post('/api/vapi/lead').set('x-vapi-secret','private-wrong-token').send({phone:'private-customer-phone'});expect(r.status).toBe(401);expect(r.body.code).toBe('authentication_failed');expect(log).toHaveBeenCalledWith('vapi_lead_auth_rejected',{secretHeaderPresent:true,authorizationPresent:false,secretLength:19,expectedLength:11,bearerPrefix:false,maskedValue:false});expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-wrong-token|private-customer-phone/);}finally{stop();log.mockRestore();}
 });
+it('accepts standard Bearer credentials only with the exact same trusted secret',async()=>{
+ const app=express();app.use(express.json());const stop=mountVapiCalls(app,{pool,env:{VAPI_WEBHOOK_SECRET:'test-secret'},send:vi.fn()});
+ const body={name:'Synthetic Bearer',phone:'9735550999',call_id:'test-call-001',assistant_id:assistantId,call_type_provider:'inboundPhoneCall'};
+ try{for(const header of ['Bearer wrong-secret','Basic test-secret','Bearer test-secret extra'])expect((await request(app).post('/api/vapi/lead').set('authorization',header).send(body)).status).toBe(401);expect((await pool.query('SELECT * FROM lead_submissions')).rows).toHaveLength(0);const r=await request(app).post('/api/vapi/lead').set('authorization','Bearer test-secret').send(body);expect(r.status).toBe(201);expect(r.body.ok).toBe(true);}finally{stop();}
+});
 it('rolls back lead changes on storage failure, allowing a clean retry',async()=>{
  const failed={connect:async()=>{const c=await pool.connect();return {...c,query:(sql,args)=>sql.startsWith('INSERT INTO vapi_call_events')?Promise.reject(Error('Synthetic write failure')):c.query(sql,args)};}};
  await expect(saveVoiceTool(failed,toolPayload())).rejects.toThrow('Synthetic write failure');expect((await pool.query('SELECT * FROM lead_submissions')).rows).toHaveLength(0);
