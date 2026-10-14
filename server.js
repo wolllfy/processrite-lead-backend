@@ -11,6 +11,8 @@ import { databaseOptions } from "./lib/database.js";
 import { mountManagedAccounts } from "./lib/account-adapter.js";
 import { mountProcessRiteReports } from "./lib/daily-report.js";
 import { mountVapiCalls, callSchema, findOrCreateVoiceLead } from "./lib/vapi-calls.js";
+import twilio from 'twilio';
+import {mountTwilioSms,smsSchema,attachSms} from './lib/twilio-sms.js';
 
 const {
   DATABASE_URL,
@@ -99,6 +101,7 @@ const authLimiter = rateLimit({
 });
 
 mountVapiCalls(app,{pool,env:process.env,send:message=>getMailer().sendMail(message)});
+mountTwilioSms(app,{pool,env:process.env,lookupMessage:sid=>twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN).messages(sid).fetch()});
 mountManagedAccounts(app,{pool,env:process.env,authLimiter});
 mountProcessRiteReports(app,{pool,env:process.env,limiter:authLimiter});
 
@@ -310,6 +313,7 @@ async function ensureSchema() {
  const ready=await pool.query("SELECT count(*)::int n FROM crm_users WHERE role='admin' AND status='active' AND password_hash IS NOT NULL");
  if(!ready.rows[0].n)throw Error('An active administrator must be bootstrapped before deployment');
  await pool.query(callSchema);
+ await pool.query(smsSchema);
 }
 
 app.get("/health", async (_req, res) => {
@@ -416,7 +420,7 @@ app.get("/api/leads", crmReadLimiter, async (req, res) => {
     return res.status(200).json({
       ok: true,
       count: result.rows.length,
-      leads: result.rows.map(normalizeLead)
+      leads: (await attachSms(pool,result.rows)).map(normalizeLead)
     });
   } catch (error) {
     console.error("lead_list_error", { code: error.code || error.name, message: error.message });
@@ -513,7 +517,7 @@ app.get("/api/leads/:id", crmReadLimiter, async (req, res) => {
     );
 
     if (!result.rows[0]) return res.status(404).json({ ok: false, message: "Lead not found." });
-    return res.status(200).json({ ok: true, lead: normalizeLead(result.rows[0]) });
+    return res.status(200).json({ ok: true, lead: normalizeLead((await attachSms(pool,result.rows))[0]) });
   } catch (error) {
     console.error("lead_detail_error", { code: error.code || error.name, message: error.message });
     return res.status(500).json({ ok: false, message: "Unable to load lead.", code: error.code || error.name || "UNKNOWN" });
@@ -595,7 +599,7 @@ app.patch("/api/leads/:id", crmReadLimiter, async (req, res) => {
     );
 
     if (!result.rows[0]) return res.status(404).json({ ok: false, message: "Lead not found." });
-    return res.status(200).json({ ok: true, lead: normalizeLead(result.rows[0]) });
+    return res.status(200).json({ ok: true, lead: normalizeLead((await attachSms(pool,result.rows))[0]) });
   } catch (error) {
     console.error("lead_update_error", { code: error.code || error.name, message: error.message });
     return res.status(500).json({ ok: false, message: "Unable to update lead.", code: error.code || error.name || "UNKNOWN" });
