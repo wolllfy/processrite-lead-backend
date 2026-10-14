@@ -3,6 +3,7 @@ import {PGlite} from '@electric-sql/pglite';
 import fs from 'node:fs';
 import express from 'express';
 import request from 'supertest';
+import {mountManagedAccounts} from '../lib/account-adapter.js';
 import {callSchema,parseCallEvent,storeCallEvent,deliverCallAlerts,mountVapiCalls} from '../lib/vapi-calls.js';
 let db,pool;
 const assistantId='0cf76238-66ec-4f04-a3d6-c06a95b980cd';
@@ -40,4 +41,9 @@ it('rejects unauthenticated and wrong-assistant webhooks',async()=>{
 });
 it('late status events do not overwrite the completed report',async()=>{
  const p=payload();p.message.analysis={summary:'Clifton bagel shop requested review.'};await storeCallEvent(pool,parseCallEvent(p));p.message.type='status-update';p.message.status='ended';delete p.message.analysis;await storeCallEvent(pool,parseCallEvent(p));expect((await pool.query('SELECT summary FROM lead_submissions')).rows[0].summary).toBe('Clifton bagel shop requested review.');
+});
+it('accepts the authenticated webhook while portal management still requires sign-in',async()=>{
+ const app=express();app.use(express.json());const env={VAPI_WEBHOOK_SECRET:'test-secret',USER_AUTH_ENABLED:'true',AUTH_SECRET:'a'.repeat(40)};
+ const stopCalls=mountVapiCalls(app,{pool,env,send:vi.fn()});const stopAccounts=mountManagedAccounts(app,{pool,env,authLimiter:(_q,_s,n)=>n()});app.get('/api/leads',(_q,s)=>s.json({leads:[]}));
+ try{expect((await request(app).post('/api/vapi/events').set('x-vapi-secret','test-secret').send(payload())).status).toBe(200);expect((await request(app).get('/api/leads')).status).toBe(401);}finally{stopCalls();stopAccounts();}
 });
