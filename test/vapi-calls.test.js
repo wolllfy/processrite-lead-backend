@@ -113,3 +113,20 @@ it('rolls back lead changes on storage failure, allowing a clean retry',async()=
  await expect(saveVoiceTool(failed,toolPayload())).rejects.toThrow('Synthetic write failure');expect((await pool.query('SELECT * FROM lead_submissions')).rows).toHaveLength(0);
  await saveVoiceTool(pool,toolPayload());expect((await pool.query('SELECT * FROM lead_submissions')).rows).toHaveLength(1);
 });
+it('corrects a model digit typo before sending the call alert using provider confirmation',async()=>{
+ const saved=await saveVoiceTool(pool,toolPayload({name:'Synthetic Phone',phone:'9735550189'}));const id=JSON.parse(saved.results[0].result).leadId;
+ const p=payload();p.message.artifact.messages=[{role:'user',message:'9735550199'},{role:'bot',message:'9735550199. Is that correct?'},{role:'user',message:'Correct.'},{role:'tool_call_result',name:'LogLead',result:JSON.stringify({ok:true,leadId:id})}];
+ await storeCallEvent(pool,parseCallEvent(p));const send=vi.fn().mockResolvedValue({accepted:['owner@example.test'],rejected:[]});await deliverCallAlerts({pool,send,env:{}});
+ expect((await pool.query('SELECT phone FROM lead_submissions')).rows[0].phone).toBe('9735550199');expect(send.mock.calls[0][0].text).toContain('Callback: 9735550199');expect(send).toHaveBeenCalledTimes(1);
+});
+it('sends one clearly marked correction for an already-accepted wrong callback and none for repeats',async()=>{
+ const saved=await saveVoiceTool(pool,toolPayload({name:'Synthetic Phone',phone:'9735550189'}));const id=JSON.parse(saved.results[0].result).leadId;const send=vi.fn().mockResolvedValue({accepted:['owner@example.test'],rejected:[]});const ctx={pool,send,env:{}};
+ await storeCallEvent(pool,parseCallEvent(payload()));await deliverCallAlerts(ctx);
+ const p=payload();p.message.artifact.messages=[{role:'user',message:'9735550199'},{role:'bot',message:'9735550199. Is that correct?'},{role:'user',message:'Yes.'},{role:'tool_call_result',name:'LogLead',result:JSON.stringify({ok:true,leadId:id})}];
+ await storeCallEvent(pool,parseCallEvent(p));await deliverCallAlerts(ctx);await storeCallEvent(pool,parseCallEvent(p));await deliverCallAlerts(ctx);
+ expect(send).toHaveBeenCalledTimes(2);expect(send.mock.calls[1][0].messageId).not.toBe(send.mock.calls[0][0].messageId);expect(send.mock.calls[1][0].text).toContain('Callback correction:');
+});
+it('does not overwrite a contact from another intake result or an unconfirmed conversation',async()=>{
+ await saveVoiceTool(pool,toolPayload({name:'Existing Merchant',phone:'9735550189'}));const p=payload();p.message.artifact.messages=[{role:'user',message:'9735550199'},{role:'bot',message:'9735550199. Is that correct?'},{role:'user',message:'Yes.'},{role:'tool_call_result',name:'LogLead',result:'{"ok":true,"leadId":"99999"}'}];
+ await storeCallEvent(pool,parseCallEvent(p));expect((await pool.query('SELECT phone FROM lead_submissions')).rows[0].phone).toBe('9735550189');
+});
