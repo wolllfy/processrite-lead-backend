@@ -1,5 +1,4 @@
-Audit date: October 14, 2026 (America/New_York). Local repairs only; production remains at b0cd61826555e7a09b7e653fc6b3ccda4ce2f07b.
-
+Current status, October 14, 2026: approved repairs are deployed. Backend 1b6cdc430225d0e5cf4282fff2eea50bac1d8f3e; portal dcad259; Riley v8; LogLead v4. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md) for current evidence and remaining live-call verification. The baseline observations below are historical and do not describe the current deployment.
 # Tony test-call trace
 Call ID: 01a13a9a-090d-7000-906d-7d2e84d14864.
 Start: October 14 at 09:28:55 Eastern. Duration: 137.216 seconds. End: customer ended call, approximately 09:31.
