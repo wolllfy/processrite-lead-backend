@@ -1,5 +1,15 @@
 # Production validation — October 14, 2026
 
+## Latest computer-only validation, 6:38 PM Eastern
+
+After call `01a13c87-6cfe-7ffb-b281-9c748e90d0c5` still returned `authentication_failed`, the owner requested computer testing to avoid further credit use. No additional phone or AI chat was initiated. Vapi's free tool-test panel does not populate the stored credential in its displayed request; its AI chat panel requires a payment method, so neither is claimed as runtime authentication proof.
+
+Render's saved secret and running environment were compared privately by fingerprint and matched, both 64 characters. A fresh Vapi credential `77f91f28-fce7-47ce-bc17-33cd7679eeee` uses standard Authorization/Bearer defaults, without request encryption. The token input was compared privately with the running environment before creation and matched exactly. No token or fingerprint appears in these reports. LogLead v5 now references this credential. Backend `f7f1c7d` validates the same shared secret from a strictly formatted Bearer header or the existing webhook header, with constant-time comparison. Wrong, malformed and unrelated authorization schemes are rejected. Riley v9 uses the latest tool and explicitly requires Process Rite spelling in written summaries. The complete prompt was pasted and compared with its source ignoring editor whitespace before publishing.
+
+Free production computer test `computer-callback-check-20261014` returned: wrong secret rejected 401; initial authenticated save 201/ok; repeat save same lead 28; completion and duplicate completion both 200; support type and Urgent priority preserved; different caller and callback retained; transcript/date/duration present. The existing synthetic test contact was reused. One alert attempt was provider-accepted, with no forced duplicate send. This exercised the backend directly using synthetic data and the server environment credential. It did not execute the new Vapi credential through a real voice call.
+
+Latest local suite: 44 tests in four files passed using `npx vitest run --pool=threads --maxWorkers=1 --no-file-parallelism --isolate=false`; lint passed. An earlier attempt with isolated fork workers hit local native memory exhaustion before execution; do not label that attempt a passing run. The prior portal suite had 16 passing tests. Fresh live voice confirmation and backend email inbox receipt remain pending. The owner added credit; balance 25.06 was verified before the latest failed call. No credit purchase was performed by the agent.
+
 ## Deployment and authorization
 
 The owner approved the proposed recovery deployment, reuse of the existing Vapi secret, internal call/email checks, and support SMS testing. No new paid plan, database migration, deleted contact, or credential rotation was performed.

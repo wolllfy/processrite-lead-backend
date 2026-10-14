@@ -1,4 +1,4 @@
-Current status, October 14, 2026: approved repairs are deployed. Backend 1b6cdc430225d0e5cf4282fff2eea50bac1d8f3e; portal dcad259; Riley v8; LogLead v4. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md) for current evidence and remaining live-call verification. The baseline observations below are historical and do not describe the current deployment.
+Current status, October 14, 2026: approved repairs are deployed. Backend f7f1c7d; portal dcad259; Riley v9; LogLead v5 with a replacement standard Bearer credential. Free computer validation passed; real Vapi voice confirmation remains pending. See [LIVE-VALIDATION.md](LIVE-VALIDATION.md). The baseline observations below are historical and do not describe the current deployment.
 # Test results
 Synthetic identities only; PGlite database and mocked SMTP/Twilio. No production notifications or paid calls.
 
