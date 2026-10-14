@@ -10,7 +10,7 @@ import { z } from "zod";
 import { databaseOptions } from "./lib/database.js";
 import { mountManagedAccounts } from "./lib/account-adapter.js";
 import { mountProcessRiteReports } from "./lib/daily-report.js";
-import { mountVapiCalls, callSchema, findOrCreateVoiceLead, attachCallStatus } from "./lib/vapi-calls.js";
+import { mountVapiCalls, callSchema, attachCallStatus } from "./lib/vapi-calls.js";
 import twilio from 'twilio';
 import {mountTwilioSms,smsSchema,attachSms} from './lib/twilio-sms.js';
 
@@ -643,6 +643,7 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
 
   const lead = normalizeInboundLead(parsed.data);
   if (lead.company) return res.status(200).json({ ok: true });
+  if (/vapi/i.test(lead.lead_source)) return res.status(410).json({ok:false,message:'Voice intake uses the authenticated call endpoint.'});
 
   const createdAt = new Date().toISOString();
   const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || req.ip || "";
@@ -653,23 +654,6 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
 
   const client = await pool.connect();
   try {
-    if(process.env.VAPI_WEBHOOK_SECRET && /vapi/i.test(lead.lead_source)) {
-      await client.query('BEGIN');
-      const id=await findOrCreateVoiceLead(client,{phone:lead.phone,name:lead.name,summary:lead.summary});
-      await client.query(`UPDATE lead_submissions SET
-       name=CASE WHEN $2<>'' AND $2<>'Unknown Caller' THEN $2 ELSE name END,
-       email=CASE WHEN $3<>'no-email@processrite.local' THEN $3 ELSE email END,
-       business_type=CASE WHEN $4<>'Not provided' THEN $4 ELSE business_type END,
-       monthly_processing_volume=CASE WHEN $5<>'Not provided' THEN $5 ELSE monthly_processing_volume END,
-       monthly_volume=CASE WHEN $5<>'Not provided' THEN $5 ELSE monthly_volume END,
-       current_processor=CASE WHEN $6<>'' THEN $6 ELSE current_processor END,
-       summary=CASE WHEN $7<>'' THEN $7 ELSE summary END,
-       call_type=CASE WHEN $8<>'' THEN $8 ELSE call_type END,
-       message=CASE WHEN $9<>'' THEN $9 ELSE message END,updated_at=now() WHERE id=$1`,
-       [id,lead.name,lead.email,lead.business_type,lead.monthly_volume,lead.current_processor,lead.summary,lead.call_type,lead.message]);
-      await client.query('COMMIT');
-      return res.status(201).json({ok:true,success:true,id,leadId:String(id),message:'Caller request saved. Call email is sent after the call ends.'});
-    }
     const stored = await client.query(
       `insert into lead_submissions
        (name, business_name, phone, email, business_type, monthly_processing_volume, monthly_volume, average_ticket, current_processor, interested_products, pain_points, call_type, lead_source, source_url, message, summary, ai_summary, ai_score, transcript, recording_url, call_duration, call_date, page_source, user_agent, ip_hash, status, priority, sms_consent, sms_consent_method, sms_consent_timestamp)
