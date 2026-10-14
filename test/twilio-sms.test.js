@@ -9,7 +9,7 @@ let db,pool;
 const sid='SM'+'a'.repeat(32),env={TWILIO_AUTH_TOKEN:'test-token-only',TWILIO_ACCOUNT_SID:'AC'+'b'.repeat(32)};
 const message={sid,direction:'inbound',from:'+19735550194',to:'+19733142419',body:'Please call about my support enquiry.',status:'received'};
 beforeAll(async()=>{db=new PGlite();await db.waitReady;await db.exec(fs.readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));await db.exec(smsSchema);const query=(s,a)=>s.includes('pg_advisory_xact_lock')?Promise.resolve({rows:[]}):db.query(s,a);pool={query,connect:async()=>({query,release(){}})};},20000);
-afterAll(()=>db.close());beforeEach(()=>db.exec('TRUNCATE processrite_sms_messages,processrite_sms_optouts,lead_submissions RESTART IDENTITY CASCADE'));
+afterAll(()=>db.close());beforeEach(()=>db.exec('TRUNCATE processrite_sms_messages,processrite_sms_optouts,processrite_sms_preferences,processrite_sms_consent_events,lead_submissions RESTART IDENTITY CASCADE'));
 it('deduplicates incoming texts and shows them in existing Leads message detail',async()=>{
  await saveSms(pool,message);await saveSms(pool,message);const rows=(await pool.query('SELECT * FROM lead_submissions')).rows;expect(rows).toHaveLength(1);expect(rows[0].sms_consent).toBe(false);const visible=await attachSms(pool,rows);expect(visible[0].message).toContain('SMS conversation');expect(visible[0].message).toContain(message.body);expect((await pool.query('SELECT * FROM processrite_sms_messages')).rows).toHaveLength(1);
 });

@@ -13,6 +13,8 @@ import { mountProcessRiteReports } from "./lib/daily-report.js";
 import { mountVapiCalls, callSchema, attachCallStatus } from "./lib/vapi-calls.js";
 import twilio from 'twilio';
 import {mountTwilioSms,smsSchema,attachSms} from './lib/twilio-sms.js';
+import {recordWebsiteConsent} from './lib/sms-consent.js';
+import {mountSmsSend,smsSendSchema} from './lib/sms-send.js';
 
 const {
   DATABASE_URL,
@@ -103,6 +105,7 @@ const authLimiter = rateLimit({
 mountVapiCalls(app,{pool,env:process.env,send:message=>getMailer().sendMail(message)});
 mountTwilioSms(app,{pool,env:process.env,lookupMessage:sid=>twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN).messages(sid).fetch()});
 mountManagedAccounts(app,{pool,env:process.env,authLimiter});
+mountSmsSend(app,{pool,env:process.env,limiter:rateLimit({windowMs:60000,limit:8,handler:rateLimitHandler}),createMessage:message=>twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN,{timeout:15000}).messages.create(message)});
 mountProcessRiteReports(app,{pool,env:process.env,limiter:authLimiter});
 
 const loginSchema = z.object({
@@ -153,6 +156,7 @@ const leadSchema = z.object({
   timestamp: optionalString(80),
   sms_consent: z.preprocess((value) => value === true || value === "true" || value === "1" || value === "on", z.boolean().optional().default(false)),
   sms_consent_method: optionalString(120),
+  sms_marketing_consent: z.preprocess(value => value === true || value === 'true' || value === '1' || value === 'on', z.boolean().optional().default(false)),
   sms_consent_timestamp: optionalString(120),
   company: optionalString(1)
 });
@@ -206,6 +210,7 @@ function leadEmailText(lead, createdAt) {
     `Lead source: ${lead.lead_source || "Website form"}`,
     `SMS consent: ${lead.sms_consent ? "Yes" : "No"}`,
     `SMS consent method: ${lead.sms_consent_method || "Not provided"}`,
+    `Promotional SMS consent: ${lead.sms_marketing_consent ? 'Yes — separate promotional checkbox' : 'No'}`,
     "",
     "Message:",
     lead.message || "Not provided"
@@ -270,6 +275,9 @@ function normalizeLead(row) {
     sms_consent: Boolean(row.sms_consent),
     sms_consent_method: row.sms_consent_method || "",
     sms_consent_timestamp: row.sms_consent_timestamp || "",
+    sms_preferences: row.sms_preferences || null,
+    sms_messages: row.sms_messages || [],
+    sms_send_attempts: row.sms_send_attempts || [],
     assigned_to: row.assigned_to || "",
     follow_up_date: row.follow_up_date || "",
     last_contacted_at: row.last_contacted_at || "",
@@ -315,6 +323,7 @@ async function ensureSchema() {
  if(!ready.rows[0].n)throw Error('An active administrator must be bootstrapped before deployment');
  await pool.query(callSchema);
  await pool.query(smsSchema);
+ await pool.query(smsSendSchema);
 }
 
 app.get("/health", async (_req, res) => {
@@ -646,6 +655,7 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
   if (/vapi/i.test(lead.lead_source)) return res.status(410).json({ok:false,message:'Voice intake uses the authenticated call endpoint.'});
 
   const createdAt = new Date().toISOString();
+  if(lead.sms_marketing_consent && !/^1?\d{10}$/.test(lead.phone.replace(/\D/g,''))) return res.status(400).json({ok:false,message:'Enter a US mobile number to opt in to promotional texts.'});
   const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || req.ip || "";
   const ipHash = hashIp(clientIp);
   const userAgent = (req.get("user-agent") || "").slice(0, 500);
@@ -654,6 +664,7 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
 
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const stored = await client.query(
       `insert into lead_submissions
        (name, business_name, phone, email, business_type, monthly_processing_volume, monthly_volume, average_ticket, current_processor, interested_products, pain_points, call_type, lead_source, source_url, message, summary, ai_summary, ai_score, transcript, recording_url, call_duration, call_date, page_source, user_agent, ip_hash, status, priority, sms_consent, sms_consent_method, sms_consent_timestamp)
@@ -693,6 +704,8 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
       ]
     );
     submissionId = stored.rows[0].id;
+    await recordWebsiteConsent(client,submissionId,lead);
+    await client.query('COMMIT');
 
     console.info("lead_submission_stored", { id: submissionId, pageSource: lead.page_source });
 
