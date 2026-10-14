@@ -26,6 +26,11 @@ it('STOP revokes both and START does not restore marketing; ordinary replies nev
  await saveSms(pool,{...sms,sid:'SM'+'b'.repeat(32),body:'START',optOutType:'START'});await saveSms(pool,{...sms,sid:'SM'+'d'.repeat(32),body:'Tell me about products'});
  [lead]=await smsPreferences(pool,(await pool.query('SELECT * FROM lead_submissions')).rows);expect(lead.sms_preferences.support.granted).toBe(true);expect(lead.sms_preferences.promotions.granted).toBe(false);expect(lead.status).toBe('Qualified');
 });
+it('records compact disclosure versions without changing historical records',async()=>{
+ await recordWebsiteConsent(pool,id,{phone,sms_consent:true,sms_marketing_consent:true,sms_disclosure_version:'support_v2',sms_marketing_disclosure_version:'promotions_v2',source_url:'https://processrite.com/contact/'});
+ const events=(await pool.query('SELECT * FROM processrite_sms_consent_events ORDER BY purpose')).rows;expect(events.map(e=>e.disclosure_version)).toEqual(['promotions_v2','support_v2']);expect(events[0].method).toBe('website_optional_promotions_checkbox_v2');
+ await expect(recordWebsiteConsent(pool,id,{phone,sms_marketing_consent:true,sms_marketing_disclosure_version:'invented'})).rejects.toThrow('Unsupported');
+});
 it('blocks missing promotional consent and unapproved registration before calling provider',async()=>{
  const provider=vi.fn();await grant(true,false);await expect(send(provider)).rejects.toThrow('No promotional');expect(provider).not.toHaveBeenCalled();
  await grant(false,true);await expect(sendLeadSms(pool,{},provider,{leadId:id,purpose:'promotions',body:'Offer',requestId:randomUUID(),actorId:1})).rejects.toThrow('carrier-approved');expect(provider).not.toHaveBeenCalled();

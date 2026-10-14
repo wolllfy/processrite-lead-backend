@@ -157,6 +157,8 @@ const leadSchema = z.object({
   sms_consent: z.preprocess((value) => value === true || value === "true" || value === "1" || value === "on", z.boolean().optional().default(false)),
   sms_consent_method: optionalString(120),
   sms_marketing_consent: z.preprocess(value => value === true || value === 'true' || value === '1' || value === 'on', z.boolean().optional().default(false)),
+  sms_disclosure_version: z.enum(['support_v1','support_v2']).optional().default('support_v1'),
+  sms_marketing_disclosure_version: z.enum(['promotions_v1','promotions_v2']).optional().default('promotions_v1'),
   sms_consent_timestamp: optionalString(120),
   company: optionalString(1)
 });
@@ -272,9 +274,9 @@ function normalizeLead(row) {
     recording_url: row.recording_url || "",
     call_duration: row.call_duration || "",
     call_date: row.call_date || "",
-    sms_consent: Boolean(row.sms_consent),
-    sms_consent_method: row.sms_consent_method || "",
-    sms_consent_timestamp: row.sms_consent_timestamp || "",
+    sms_consent: Boolean(row.sms_preferences?.support.granted ?? row.sms_consent),
+    sms_consent_method: row.sms_preferences?.support.method || row.sms_consent_method || "",
+    sms_consent_timestamp: row.sms_preferences?.support.timestamp || row.sms_consent_timestamp || "",
     sms_preferences: row.sms_preferences || null,
     sms_messages: row.sms_messages || [],
     sms_send_attempts: row.sms_send_attempts || [],
