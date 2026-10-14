@@ -10,7 +10,7 @@ import { z } from "zod";
 import { databaseOptions } from "./lib/database.js";
 import { mountManagedAccounts } from "./lib/account-adapter.js";
 import { mountProcessRiteReports } from "./lib/daily-report.js";
-import { mountVapiCalls, callSchema, findOrCreateVoiceLead } from "./lib/vapi-calls.js";
+import { mountVapiCalls, callSchema, findOrCreateVoiceLead, attachCallStatus } from "./lib/vapi-calls.js";
 import twilio from 'twilio';
 import {mountTwilioSms,smsSchema,attachSms} from './lib/twilio-sms.js';
 
@@ -256,6 +256,7 @@ function normalizeLead(row) {
     message: row.message || "",
     page_source: row.page_source || "",
     email_alert_sent: Boolean(row.email_alert_sent),
+    voice_notification: row.voice_notification || null,
     status: row.status || "New",
     priority: row.priority || "Medium",
     summary: row.summary || "",
@@ -420,7 +421,7 @@ app.get("/api/leads", crmReadLimiter, async (req, res) => {
     return res.status(200).json({
       ok: true,
       count: result.rows.length,
-      leads: (await attachSms(pool,result.rows)).map(normalizeLead)
+      leads: (await attachCallStatus(pool,await attachSms(pool,result.rows))).map(normalizeLead)
     });
   } catch (error) {
     console.error("lead_list_error", { code: error.code || error.name, message: error.message });
@@ -517,7 +518,7 @@ app.get("/api/leads/:id", crmReadLimiter, async (req, res) => {
     );
 
     if (!result.rows[0]) return res.status(404).json({ ok: false, message: "Lead not found." });
-    return res.status(200).json({ ok: true, lead: normalizeLead((await attachSms(pool,result.rows))[0]) });
+    return res.status(200).json({ ok: true, lead: normalizeLead((await attachCallStatus(pool,await attachSms(pool,result.rows)))[0]) });
   } catch (error) {
     console.error("lead_detail_error", { code: error.code || error.name, message: error.message });
     return res.status(500).json({ ok: false, message: "Unable to load lead.", code: error.code || error.name || "UNKNOWN" });
@@ -599,7 +600,7 @@ app.patch("/api/leads/:id", crmReadLimiter, async (req, res) => {
     );
 
     if (!result.rows[0]) return res.status(404).json({ ok: false, message: "Lead not found." });
-    return res.status(200).json({ ok: true, lead: normalizeLead((await attachSms(pool,result.rows))[0]) });
+    return res.status(200).json({ ok: true, lead: normalizeLead((await attachCallStatus(pool,await attachSms(pool,result.rows)))[0]) });
   } catch (error) {
     console.error("lead_update_error", { code: error.code || error.name, message: error.message });
     return res.status(500).json({ ok: false, message: "Unable to update lead.", code: error.code || error.name || "UNKNOWN" });
