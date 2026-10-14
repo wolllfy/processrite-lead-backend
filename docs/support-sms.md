@@ -1,5 +1,7 @@
 # Process Rite support SMS
 
+Historical support-only deployment notes below. The October 14 rollout adds separate promotional consent, structured Leads conversation and guarded single-recipient sends; see [promotional-sms.md](promotional-sms.md) for current deployment and test evidence. Carrier marketing approval remains pending.
+
 Website: Optional, unchecked support-only SMS consent. A submitted phone number or phone call alone does not opt a customer in. The existing Leads consent, method, and timestamp fields store the checkbox result. Matching SMS privacy/terms are published on the existing policy URLs.
 
 Backend: `POST /api/twilio/sms` records inbound messages, and `/api/twilio/sms/status` records outbound delivery changes. Both use the official Twilio SDK to verify the signature against the fixed public backend URL and `TWILIO_AUTH_TOKEN`, and require `TWILIO_ACCOUNT_SID`. Configure the existing Messaging Service's inbound webhook and delivery-status callback. Only traffic involving +19733142419 is accepted. Credentials belong in Render environment variables, never source control.
