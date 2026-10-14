@@ -30,3 +30,22 @@ it('verifies Twilio signatures and rejects unauthenticated or wrong-line message
  expect((await request(app).post(path).type('form').send(body)).status).toBe(403);expect((await request(app).post(path).set('x-twilio-signature',sign(body)).type('form').send(body)).status).toBe(200);
  const wrong={...body,To:'+19735550199'};expect((await request(app).post(path).set('x-twilio-signature',sign(wrong)).type('form').send(wrong)).status).toBe(400);
 });
+it('HELP and ordinary enquiries do not grant text marketing consent; Unicode survives',async()=>{
+ await saveSms(pool,{...message,body:'HELP'});await saveSms(pool,{...message,sid:'SM'+'d'.repeat(32),body:'Support — café equipment ☕'});
+ const rows=(await pool.query('SELECT * FROM lead_submissions')).rows;expect(rows[0].sms_consent).toBe(false);expect((await attachSms(pool,rows))[0].message).toContain('café equipment ☕');expect((await pool.query('SELECT * FROM processrite_sms_optouts')).rows).toHaveLength(0);
+});
+it('retains carrier failure code and a delivered message cannot regress to a failed callback',async()=>{
+ const outbound={...message,direction:'outbound',from:message.to,to:message.from};await saveSms(pool,{...outbound,status:'undelivered',error:'30034'});let rows=(await pool.query('SELECT * FROM lead_submissions')).rows;expect((await attachSms(pool,rows))[0].message).toContain('error 30034');
+ await saveSms(pool,{...outbound,status:'delivered'});await saveSms(pool,{...outbound,status:'failed',error:'21610'});expect((await pool.query('SELECT * FROM processrite_sms_messages')).rows[0].delivery_status).toBe('delivered');
+});
+it('authenticates delivery callbacks and shows delivered outbound texts in the same CRM thread',async()=>{
+ await saveSms(pool,message);const app=express();app.use(express.urlencoded({extended:false}));mountTwilioSms(app,{pool,env,lookupMessage:async()=>({from:message.to,to:message.from,body:'Synthetic support reply',status:'delivered'})});
+ const path='/api/twilio/sms/status',body={AccountSid:env.TWILIO_ACCOUNT_SID,MessageSid:'SM'+'e'.repeat(32),MessageStatus:'delivered'};const sign=twilio.getExpectedTwilioSignature(env.TWILIO_AUTH_TOKEN,'https://processrite-lead-backend.onrender.com'+path,body);
+ expect((await request(app).post(path).type('form').send(body)).status).toBe(403);expect((await request(app).post(path).set('x-twilio-signature',sign).type('form').send(body)).status).toBe(200);
+ const rows=(await pool.query('SELECT * FROM lead_submissions')).rows;expect(rows).toHaveLength(1);expect((await attachSms(pool,rows))[0].message).toContain('outbound | delivered');
+});
+it('rejects tampered text bodies and returns retryable errors for database outages',async()=>{
+ const app=express();app.use(express.urlencoded({extended:false}));mountTwilioSms(app,{pool:{connect:async()=>{throw Error('Synthetic outage');}},env,lookupMessage:async()=>({})});
+ const path='/api/twilio/sms',body={AccountSid:env.TWILIO_ACCOUNT_SID,MessageSid:sid,From:message.from,To:message.to,Body:message.body};const sign=twilio.getExpectedTwilioSignature(env.TWILIO_AUTH_TOKEN,'https://processrite-lead-backend.onrender.com'+path,body);
+ expect((await request(app).post(path).set('x-twilio-signature',sign).type('form').send({...body,Body:'Tampered'})).status).toBe(403);expect((await request(app).post(path).set('x-twilio-signature',sign).type('form').send(body)).status).toBe(500);
+});
