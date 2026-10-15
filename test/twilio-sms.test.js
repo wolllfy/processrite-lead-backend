@@ -49,3 +49,16 @@ it('rejects tampered text bodies and returns retryable errors for database outag
  const path='/api/twilio/sms',body={AccountSid:env.TWILIO_ACCOUNT_SID,MessageSid:sid,From:message.from,To:message.to,Body:message.body};const sign=twilio.getExpectedTwilioSignature(env.TWILIO_AUTH_TOKEN,'https://processrite-lead-backend.onrender.com'+path,body);
  expect((await request(app).post(path).set('x-twilio-signature',sign).type('form').send({...body,Body:'Tampered'})).status).toBe(403);expect((await request(app).post(path).set('x-twilio-signature',sign).type('form').send(body)).status).toBe(500);
 });
+it('records sender-selection failures only for a known outbound message and matching recipient',async()=>{
+ const outbound={...message,direction:'outbound',from:message.to,to:message.from,status:'accepted'};
+ await saveSms(pool,outbound);
+ let provider={from:null,to:message.from,status:'failed',errorCode:21703};
+ const app=express();app.use(express.urlencoded({extended:false}));mountTwilioSms(app,{pool,env,lookupMessage:async()=>provider});
+ const path='/api/twilio/sms/status';
+ const post=async(id)=>{const body={AccountSid:env.TWILIO_ACCOUNT_SID,MessageSid:id,MessageStatus:'failed',ErrorCode:'21703'};return request(app).post(path).set('x-twilio-signature',twilio.getExpectedTwilioSignature(env.TWILIO_AUTH_TOKEN,'https://processrite-lead-backend.onrender.com'+path,body)).type('form').send(body);};
+ expect((await post(sid)).status).toBe(200);
+ expect((await pool.query('SELECT delivery_status,error_code FROM processrite_sms_messages WHERE message_sid=$1',[sid])).rows[0]).toEqual({delivery_status:'failed',error_code:'21703'});
+ expect((await post('SM'+'f'.repeat(32))).status).toBe(400);
+ provider={...provider,to:'+19735550199'};expect((await post(sid)).status).toBe(400);
+ provider={...provider,to:message.from,status:'delivered'};expect((await post(sid)).status).toBe(400);
+});
