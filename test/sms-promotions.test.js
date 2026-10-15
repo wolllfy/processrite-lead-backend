@@ -6,7 +6,7 @@ import express from 'express';
 import request from 'supertest';
 import {smsSchema,saveSms,attachSms} from '../lib/twilio-sms.js';
 import {recordWebsiteConsent,smsPreferences} from '../lib/sms-consent.js';
-import {smsSendSchema,sendLeadSms,mountSmsSend} from '../lib/sms-send.js';
+import {smsSendSchema,sendLeadSms,mountSmsSend,supportMessagingService,supportService} from '../lib/sms-send.js';
 let db,pool,id;
 const phone='9735550194',env={PROCESSRITE_PROMO_APPROVED:'true',TWILIO_PROMO_SERVICE_SID:'MG'+'c'.repeat(32)};
 beforeAll(async()=>{db=new PGlite();await db.waitReady;await db.exec(fs.readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));await db.exec(smsSchema+smsSendSchema);const query=(s,a)=>s.includes('pg_advisory_xact_lock')?Promise.resolve({rows:[]}):db.query(s,a);pool={query,connect:async()=>({query,release(){}})};},20000);
@@ -14,6 +14,19 @@ afterAll(()=>db.close());
 beforeEach(async()=>{await db.exec('TRUNCATE processrite_sms_messages,processrite_sms_optouts,processrite_sms_preferences,processrite_sms_consent_events,processrite_sms_sends,lead_submissions RESTART IDENTITY CASCADE');id=(await pool.query("INSERT INTO lead_submissions(name,phone,email,business_type,monthly_processing_volume,lead_source,status,sms_consent) VALUES('Promo test',$1,'test@example.test','Shop','10000','Website Form','Qualified',false) RETURNING id",[phone])).rows[0].id;});
 const grant=async(support,promo)=>{const eventLead=(await pool.query("INSERT INTO lead_submissions(name,phone,email,business_type,monthly_processing_volume,lead_source,status,sms_consent) VALUES('Website consent',$1,'test@example.test','Shop','10000','Website Form','New',false) RETURNING id",[phone])).rows[0].id;return recordWebsiteConsent(pool,eventLead,{phone,sms_consent:support,sms_marketing_consent:promo,source_url:'https://processrite.com/contact/'});};
 const send=(provider,extra={})=>sendLeadSms(pool,env,provider,{leadId:id,purpose:'promotions',body:'Review your payment setup with our team.',requestId:randomUUID(),actorId:1,...extra});
+it('routes support through the configured approved service and rejects malformed configuration',async()=>{
+ expect(supportMessagingService({})).toBe(supportService);
+ const service='MG'+'d'.repeat(32);await grant(true,false);
+ const provider=vi.fn(async()=>({sid:'SM'+'f'.repeat(32),status:'queued'}));
+ await sendLeadSms(pool,{TWILIO_SUPPORT_SERVICE_SID:service},provider,{leadId:id,purpose:'support',body:'Requested test',requestId:randomUUID(),actorId:1});
+ expect(provider.mock.calls[0][0].messagingServiceSid).toBe(service);
+ await expect(sendLeadSms(pool,{TWILIO_SUPPORT_SERVICE_SID:'invalid'},provider,{leadId:id,purpose:'support',body:'Requested test',requestId:randomUUID(),actorId:1})).rejects.toThrow('misconfigured');
+ expect(provider).toHaveBeenCalledTimes(1);
+});
+it('blocks support and promotional sends after STOP without contacting Twilio',async()=>{
+ await grant(true,true);await saveSms(pool,{sid:'SM'+'9'.repeat(32),direction:'inbound',from:'+1'+phone,to:'+19733142419',status:'received',body:'STOP',optOutType:'STOP'});
+ const provider=vi.fn();for(const purpose of ['support','promotions'])await expect(send(provider,{purpose})).rejects.toThrow('opted out');expect(provider).not.toHaveBeenCalled();
+});
 it('separates all four checkbox choices and preserves exact disclosure evidence',async()=>{
  await grant(true,false);let [lead]=await smsPreferences(pool,(await pool.query('SELECT * FROM lead_submissions')).rows);expect(lead.sms_preferences.support.granted).toBe(true);expect(lead.sms_preferences.promotions.granted).toBe(false);
  await grant(false,true);[lead]=await smsPreferences(pool,(await pool.query('SELECT * FROM lead_submissions')).rows);expect(lead.sms_preferences.support.granted).toBe(true);expect(lead.sms_preferences.promotions.granted).toBe(true);expect(lead.sms_preferences.promotions.disclosure_version).toBe('promotions_v1');expect(lead.sms_preferences.promotions.source_url).toBe('https://processrite.com/contact/');
