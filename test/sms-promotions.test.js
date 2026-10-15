@@ -20,6 +20,7 @@ it('routes support through the configured approved service and rejects malformed
  const provider=vi.fn(async()=>({sid:'SM'+'f'.repeat(32),status:'queued'}));
  await sendLeadSms(pool,{TWILIO_SUPPORT_SERVICE_SID:service},provider,{leadId:id,purpose:'support',body:'Requested test',requestId:randomUUID(),actorId:1});
  expect(provider.mock.calls[0][0].messagingServiceSid).toBe(service);
+ expect(provider.mock.calls[0][0].from).toBe('+19733142419');
  await expect(sendLeadSms(pool,{TWILIO_SUPPORT_SERVICE_SID:'invalid'},provider,{leadId:id,purpose:'support',body:'Requested test',requestId:randomUUID(),actorId:1})).rejects.toThrow('misconfigured');
  expect(provider).toHaveBeenCalledTimes(1);
 });
