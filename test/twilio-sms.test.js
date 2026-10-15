@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import express from 'express';
 import request from 'supertest';
 import twilio from 'twilio';
+import {deliverSmsAlert,mountSmsInbox} from '../lib/sms-inbox.js';
 import {smsSchema,saveSms,attachSms,mountTwilioSms} from '../lib/twilio-sms.js';
 let db,pool;
 const sid='SM'+'a'.repeat(32),env={TWILIO_AUTH_TOKEN:'test-token-only',TWILIO_ACCOUNT_SID:'AC'+'b'.repeat(32)};
@@ -61,4 +62,30 @@ it('records sender-selection failures only for a known outbound message and matc
  expect((await post('SM'+'f'.repeat(32))).status).toBe(400);
  provider={...provider,to:'+19735550199'};expect((await post(sid)).status).toBe(400);
  provider={...provider,to:message.from,status:'delivered'};expect((await post(sid)).status).toBe(400);
+});
+it('queues ordinary replies once and excludes automatic consent and help keywords',async()=>{
+ await saveSms(pool,message);await saveSms(pool,message);
+ const sent=[];const send=async mail=>{sent.push(mail);return {accepted:['alerts@example.test'],rejected:[]};};
+ const alertEnv={EMAIL_FROM:'noreply@example.test',EMAIL_TO:'alerts@example.test'};
+ expect(await deliverSmsAlert({pool,env:alertEnv,send})).toBe(true);expect(await deliverSmsAlert({pool,env:alertEnv,send})).toBe(false);
+ expect(sent).toHaveLength(1);expect(sent[0].text).toContain(message.body);expect(sent[0].to).toBe(alertEnv.EMAIL_TO);
+ for(const [index,body] of ['STOP','START','HELP'].entries())await saveSms(pool,{...message,sid:'SM'+String(index).repeat(32),body});
+ expect((await pool.query('SELECT * FROM processrite_sms_messages WHERE needs_attention=true')).rows).toHaveLength(1);
+});
+it('retains replies and schedules retry when the email provider rejects the alert',async()=>{
+ await saveSms(pool,message);await deliverSmsAlert({pool,env:{},send:async()=>({accepted:[],rejected:['test']})});
+ const row=(await pool.query('SELECT * FROM processrite_sms_messages WHERE message_sid=$1',[sid])).rows[0];
+ expect(row.alert_attempts).toBe(1);expect(row.alert_accepted_at).toBeNull();expect(row.needs_attention).toBe(true);expect(row.handled_at).toBeNull();
+});
+it('requires staff write access and handles only selected messages, preserving a newer arrival',async()=>{
+ await saveSms(pool,message);const lead=(await pool.query('SELECT * FROM lead_submissions')).rows[0];
+ const newer='SM'+'8'.repeat(32);await saveSms(pool,{...message,sid:newer,body:'Newer question'});
+ const app=express();app.use(express.json());app.use((req,res,next)=>{if(req.get('test-role'))req.user={id:7,role:req.get('test-role')};next();});mountSmsInbox(app,{pool,limiter:(req,res,next)=>next()});
+ const path=`/api/leads/${lead.id}/sms/handled`,body={message_sids:[sid]};
+ expect((await request(app).post(path).send(body)).status).toBe(401);
+ expect((await request(app).post(path).set('test-role','viewer').send(body)).status).toBe(403);
+ expect((await request(app).post(path).set('test-role','manager').send({message_sids:['invalid']})).status).toBe(400);
+ expect((await request(app).post(path).set('test-role','manager').send(body)).body.handled).toBe(1);
+ expect((await pool.query('SELECT * FROM processrite_sms_messages WHERE message_sid=$1',[newer])).rows[0].handled_at).toBeNull();
+ expect((await request(app).post(path).set('test-role','admin').send(body)).body.handled).toBe(0);
 });

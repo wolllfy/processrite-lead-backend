@@ -15,6 +15,7 @@ import twilio from 'twilio';
 import {mountTwilioSms,smsSchema,attachSms} from './lib/twilio-sms.js';
 import {recordWebsiteConsent} from './lib/sms-consent.js';
 import {mountSmsSend,smsSendSchema} from './lib/sms-send.js';
+import {mountSmsInbox,deliverSmsAlert} from './lib/sms-inbox.js';
 
 const {
   DATABASE_URL,
@@ -106,6 +107,7 @@ mountVapiCalls(app,{pool,env:process.env,send:message=>getMailer().sendMail(mess
 mountTwilioSms(app,{pool,env:process.env,lookupMessage:sid=>twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN).messages(sid).fetch()});
 mountManagedAccounts(app,{pool,env:process.env,authLimiter});
 mountSmsSend(app,{pool,env:process.env,limiter:rateLimit({windowMs:60000,limit:8,handler:rateLimitHandler}),createMessage:message=>twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN,{timeout:15000}).messages.create(message)});
+mountSmsInbox(app,{pool,limiter:crmReadLimiter});
 mountProcessRiteReports(app,{pool,env:process.env,limiter:authLimiter});
 
 const loginSchema = z.object({
@@ -776,6 +778,7 @@ console.info("startup_begin", {
 ensureSchema()
   .then(() => {
     console.info("database_schema_ready");
+    const smsTimer=setInterval(()=>deliverSmsAlert({pool,env:process.env,send:message=>getMailer().sendMail(message)}).catch(()=>console.error('sms_reply_worker_failed')),10000);smsTimer.unref();
     app.listen(port, () => console.info("startup_ready", { port, version: process.env.RENDER_GIT_COMMIT || "unknown" }));
   })
   .catch((error) => {
