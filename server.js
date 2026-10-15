@@ -16,6 +16,7 @@ import {mountTwilioSms,smsSchema,attachSms} from './lib/twilio-sms.js';
 import {recordWebsiteConsent} from './lib/sms-consent.js';
 import {mountSmsSend,smsSendSchema} from './lib/sms-send.js';
 import {mountSmsInbox,deliverSmsAlert} from './lib/sms-inbox.js';
+import {mountCampaigns,recordReviewRequest} from './lib/campaigns.js';
 
 const {
   DATABASE_URL,
@@ -108,6 +109,7 @@ mountTwilioSms(app,{pool,env:process.env,lookupMessage:sid=>twilio(process.env.T
 mountManagedAccounts(app,{pool,env:process.env,authLimiter});
 mountSmsSend(app,{pool,env:process.env,limiter:rateLimit({windowMs:60000,limit:8,handler:rateLimitHandler}),createMessage:message=>twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN,{timeout:15000}).messages.create(message)});
 mountSmsInbox(app,{pool,limiter:crmReadLimiter});
+mountCampaigns(app,{pool,limiter:crmReadLimiter});
 mountProcessRiteReports(app,{pool,env:process.env,limiter:authLimiter});
 
 const loginSchema = z.object({
@@ -155,6 +157,9 @@ const leadSchema = z.object({
   status: optionalString(80),
   priority: optionalString(80),
   page_source: optionalString(500),
+  review_day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal('')).optional(),
+  review_window: z.enum(['','Morning','Afternoon','Please contact me to arrange']).optional(),
+  review_contact: z.enum(['','Phone','Email']).optional(),
   timestamp: optionalString(80),
   sms_consent: z.preprocess((value) => value === true || value === "true" || value === "1" || value === "on", z.boolean().optional().default(false)),
   sms_consent_method: optionalString(120),
@@ -282,6 +287,7 @@ function normalizeLead(row) {
     sms_preferences: row.sms_preferences || null,
     sms_messages: row.sms_messages || [],
     sms_send_attempts: row.sms_send_attempts || [],
+    utm_campaign: row.utm_campaign || '',utm_source: row.utm_source || '',utm_medium: row.utm_medium || '',review_request:row.review_request||null,
     assigned_to: row.assigned_to || "",
     follow_up_date: row.follow_up_date || "",
     last_contacted_at: row.last_contacted_at || "",
@@ -298,6 +304,9 @@ function normalizeInboundLead(input) {
   const monthlyVolume = input.monthly_processing_volume || input.monthly_volume || "";
   const messageParts = [
     input.message,
+    input.review_day ? `Requested review day: ${input.review_day}` : '',
+    input.review_window ? `Requested review window (Eastern): ${input.review_window}` : '',
+    input.review_contact ? `Arrange review by: ${input.review_contact}. Appointment requires confirmation.` : '',
     input.summary ? `Summary: ${input.summary}` : "",
     input.pain_points ? `Pain points: ${input.pain_points}` : "",
     input.interested_products ? `Interested products: ${input.interested_products}` : ""
@@ -709,6 +718,7 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
     );
     submissionId = stored.rows[0].id;
     await recordWebsiteConsent(client,submissionId,lead);
+    await recordReviewRequest(client,submissionId,parsed.data);
     await client.query('COMMIT');
 
     console.info("lead_submission_stored", { id: submissionId, pageSource: lead.page_source });
