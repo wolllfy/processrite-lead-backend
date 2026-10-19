@@ -7,6 +7,7 @@ import nodemailer from "nodemailer";
 import rateLimit from "express-rate-limit";
 import pg from "pg";
 import { z } from "zod";
+import {initializeEnquiryWorkflow,brandPerformance} from "./lib/enquiry-workflow.js";
 import {brandIntakeSchema,validateBrandIntake,recordBrandIntake,attachBrandIntake,brandFilterSql} from "./lib/brand-intake.js";
 import { databaseOptions } from "./lib/database.js";
 import { mountManagedAccounts } from "./lib/account-adapter.js";
@@ -178,8 +179,9 @@ const leadUpdateSchema = z.object({
   status: z.string().trim().max(80).optional(),
   priority: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(5000).optional(),
+  next_action: z.string().trim().max(500).optional(),
   assigned_to: z.string().trim().max(160).optional(),
-  follow_up_date: z.string().trim().max(80).optional(),
+  follow_up_date: z.string().trim().max(80).refine(v=>!v||!Number.isNaN(Date.parse(v)),"Use a valid follow-up date").optional(),
   last_contacted_at: z.string().trim().max(80).optional(),
   lead_score: z.string().trim().max(80).optional(),
   archived: z.boolean().optional()
@@ -293,6 +295,7 @@ function normalizeLead(row) {
     sms_messages: row.sms_messages || [],
     sms_send_attempts: row.sms_send_attempts || [],
     utm_campaign: row.utm_campaign || '',utm_source: row.utm_source || '',utm_medium: row.utm_medium || '',review_request:row.review_request||null,
+    next_action: row.next_action || "",
     assigned_to: row.assigned_to || "",
     follow_up_date: row.follow_up_date || "",
     last_contacted_at: row.last_contacted_at || "",
@@ -339,6 +342,7 @@ async function ensureSchema() {
  await pool.query('SELECT id FROM lead_submissions LIMIT 0');
  const ready=await pool.query("SELECT count(*)::int n FROM crm_users WHERE role='admin' AND status='active' AND password_hash IS NOT NULL");
  if(!ready.rows[0].n)throw Error('An active administrator must be bootstrapped before deployment');
+ await pool.query("ALTER TABLE lead_submissions ADD COLUMN IF NOT EXISTS next_action text NOT NULL DEFAULT ''; ALTER TABLE lead_submissions ADD COLUMN IF NOT EXISTS follow_up_at timestamptz");
  await pool.query(brandIntakeSchema);
  await pool.query(callSchema);
  await pool.query(smsSchema);
@@ -434,6 +438,7 @@ app.get("/api/leads", crmReadLimiter, async (req, res) => {
         coalesce(sms_consent, false) as sms_consent,
         coalesce(sms_consent_method, '') as sms_consent_method,
         coalesce(sms_consent_timestamp, '') as sms_consent_timestamp,
+        coalesce(next_action, '') as next_action,
         coalesce(assigned_to, '') as assigned_to,
         coalesce(follow_up_date, '') as follow_up_date,
         coalesce(last_contacted_at, '') as last_contacted_at,
@@ -483,7 +488,7 @@ async function handleDashboardStats(req, res) {
       where coalesce(archived, false) = false AND ${viewCondition}
     `,params);
 
-    return res.status(200).json({ ok: true, stats: result.rows[0] });
+    return res.status(200).json({ ok: true, stats: {...result.rows[0],workflow_available:true} });
   } catch (error) {
     console.error("lead_stats_error", { code: error.code || error.name, message: error.message });
     return res.status(500).json({ ok: false, message: "Unable to load lead stats.", code: error.code || error.name || "UNKNOWN" });
@@ -492,6 +497,8 @@ async function handleDashboardStats(req, res) {
 
 app.get("/api/leads/stats", crmReadLimiter, handleDashboardStats);
 app.get("/api/dashboard/stats", crmReadLimiter, handleDashboardStats);
+
+app.get("/api/leads/performance",crmReadLimiter,async(req,res)=>{if(!requireCrmAccess(req,res)||!requireDatabase(res))return;try{res.json({ok:true,brands:await brandPerformance(pool)});}catch{res.status(500).json({ok:false,message:"Enquiry performance is unavailable."});}});
 
 app.get("/api/leads/:id", crmReadLimiter, async (req, res) => {
   if (!requireCrmAccess(req, res)) return;
@@ -537,6 +544,7 @@ app.get("/api/leads/:id", crmReadLimiter, async (req, res) => {
         coalesce(sms_consent, false) as sms_consent,
         coalesce(sms_consent_method, '') as sms_consent_method,
         coalesce(sms_consent_timestamp, '') as sms_consent_timestamp,
+        coalesce(next_action, '') as next_action,
         coalesce(assigned_to, '') as assigned_to,
         coalesce(follow_up_date, '') as follow_up_date,
         coalesce(last_contacted_at, '') as last_contacted_at,
@@ -575,6 +583,7 @@ app.patch("/api/leads/:id", crmReadLimiter, async (req, res) => {
     if (key === "priority" && !priorityOptions.has(value)) value = "Medium";
     values.push(value);
     fields.push(`${key} = $${values.length}`);
+    if(key==="follow_up_date"){values.push(value||null);fields.push(`follow_up_at = $${values.length}::timestamptz`);}
   }
 
   if (!fields.length) return res.status(400).json({ ok: false, message: "No fields to update." });
@@ -621,6 +630,7 @@ app.patch("/api/leads/:id", crmReadLimiter, async (req, res) => {
         coalesce(sms_consent, false) as sms_consent,
         coalesce(sms_consent_method, '') as sms_consent_method,
         coalesce(sms_consent_timestamp, '') as sms_consent_timestamp,
+        coalesce(next_action, '') as next_action,
         coalesce(assigned_to, '') as assigned_to,
         coalesce(follow_up_date, '') as follow_up_date,
         coalesce(last_contacted_at, '') as last_contacted_at,
@@ -729,6 +739,7 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
     );
     submissionId = stored.rows[0].id;
     await recordBrandIntake(client,submissionId,intake);
+    await initializeEnquiryWorkflow(client,submissionId,intake);
     await recordWebsiteConsent(client,submissionId,lead);
     await recordReviewRequest(client,submissionId,parsed.data);
     await client.query('COMMIT');
