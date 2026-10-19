@@ -327,7 +327,7 @@
       },
       {
         "key": "town",
-        "label": "New Jersey town",
+        "label": "City and state",
         "options": null,
         "required": true
       },
