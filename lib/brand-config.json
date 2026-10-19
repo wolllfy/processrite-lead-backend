@@ -1,0 +1,496 @@
+[
+  {
+    "slug": "atmrite",
+    "name": "ATMRite",
+    "type": "atm_placement",
+    "label": "ATM placement",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "location_type",
+        "label": "Location type",
+        "options": [
+          "Retail shop",
+          "Restaurant / hospitality",
+          "Convenience store",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "town",
+        "label": "Town and state",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "placement_model",
+        "label": "Arrangement to explore",
+        "options": [
+          "Not sure yet",
+          "Managed placement",
+          "Own the equipment"
+        ],
+        "required": false
+      },
+      {
+        "key": "project_stage",
+        "label": "Project stage",
+        "options": [
+          "Exploring options",
+          "Existing location",
+          "New opening"
+        ],
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "automaterite",
+    "name": "AutomateRite",
+    "type": "automation_project",
+    "label": "Workflow automation",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "workflow",
+        "label": "Which task or handoff do you want to improve?",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "current_tools",
+        "label": "Current tools or systems",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "frequency",
+        "label": "How often does the task happen?",
+        "options": [
+          "Several times daily",
+          "Daily",
+          "Weekly",
+          "Monthly",
+          "Varies"
+        ],
+        "required": false
+      },
+      {
+        "key": "timeline",
+        "label": "Preferred project timing",
+        "options": [
+          "Exploring",
+          "Within a month",
+          "1\u20133 months",
+          "Later"
+        ],
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "billingrite",
+    "name": "BillingRite",
+    "type": "billing_workflow",
+    "label": "Billing workflow",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "billing_model",
+        "label": "How do you bill?",
+        "options": [
+          "One-off invoices",
+          "Recurring billing",
+          "Both",
+          "Planning a new process"
+        ],
+        "required": true
+      },
+      {
+        "key": "current_tools",
+        "label": "Current invoicing or accounting tools",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "focus",
+        "label": "Main question",
+        "options": [
+          "Invoice clarity",
+          "Reminders and follow-up",
+          "Recurring authorization workflow",
+          "Reconciliation",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "invoice_count",
+        "label": "Approximate invoices per month (optional)",
+        "options": null,
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "clinicrite",
+    "name": "ClinicRite",
+    "type": "clinic_operations",
+    "label": "Clinic operations",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "practice_type",
+        "label": "Practice type",
+        "options": [
+          "Medical",
+          "Dental",
+          "Allied health",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "location",
+        "label": "Town and state",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "focus",
+        "label": "Administrative area",
+        "options": [
+          "Front-desk handoffs",
+          "Payments and daily close",
+          "Tool / vendor review",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "current_tools",
+        "label": "Administrative tools in use (no patient details)",
+        "options": null,
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "coveragerite",
+    "name": "CoverageRite",
+    "type": "coverage_education",
+    "label": "Coverage preparation",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "business_activity",
+        "label": "Business activity (general description)",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "state",
+        "label": "State",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "topic",
+        "label": "Question topic",
+        "options": [
+          "Renewal preparation",
+          "Insurance terminology",
+          "Organizing business information",
+          "Other educational question"
+        ],
+        "required": true
+      },
+      {
+        "key": "renewal_timing",
+        "label": "Renewal timing",
+        "options": [
+          "Not sure",
+          "Within 30 days",
+          "1\u20133 months",
+          "More than 3 months"
+        ],
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "dealerrite",
+    "name": "DealerRite",
+    "type": "dealer_operations",
+    "label": "Dealer operations",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "location",
+        "label": "Town and state",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "focus",
+        "label": "Area to improve",
+        "options": [
+          "Lead follow-up",
+          "Vehicle listings",
+          "Delivery preparation",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "current_tools",
+        "label": "Current CRM or dealership tools",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "timeline",
+        "label": "Project timing",
+        "options": [
+          "Exploring",
+          "Within a month",
+          "1\u20133 months",
+          "Later"
+        ],
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "hotelrite",
+    "name": "HotelRite",
+    "type": "hotel_operations",
+    "label": "Hotel operations",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "property_type",
+        "label": "Property type",
+        "options": [
+          "Independent hotel",
+          "Motel",
+          "Inn / guesthouse",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "location",
+        "label": "Town and state",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "room_count",
+        "label": "Approximate room count (optional)",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "focus",
+        "label": "Operational priority",
+        "options": [
+          "Shift handover",
+          "Housekeeping and room status",
+          "Maintenance",
+          "Performance reporting",
+          "Other"
+        ],
+        "required": true
+      }
+    ]
+  },
+  {
+    "slug": "jerseypayments",
+    "name": "JerseyPayments",
+    "type": "payment_review",
+    "label": "Payments review",
+    "group": "payments",
+    "fields": [
+      {
+        "key": "business_type",
+        "label": "Business type",
+        "options": [
+          "Retail",
+          "Restaurant / cafe",
+          "Professional services",
+          "Contractor",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "town",
+        "label": "New Jersey town",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "monthly_processing_volume",
+        "label": "Monthly card volume (optional)",
+        "options": [
+          "Under $10,000",
+          "$10,000 - $25,000",
+          "$25,000 - $50,000",
+          "$50,000 - $100,000",
+          "$100,000+",
+          "Not Sure"
+        ],
+        "required": false
+      },
+      {
+        "key": "current_processor",
+        "label": "Current processor / POS (optional)",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "focus",
+        "label": "What would you like to review?",
+        "options": [
+          "Processing costs",
+          "POS / equipment",
+          "New business setup",
+          "Online / invoice payments",
+          "Other"
+        ],
+        "required": true
+      }
+    ]
+  },
+  {
+    "slug": "oliverite",
+    "name": "OliveRite",
+    "type": "olive_oil_question",
+    "label": "Olive oil enquiry",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "buyer_type",
+        "label": "I am a",
+        "options": [
+          "Home cook",
+          "Foodservice buyer",
+          "Retail buyer",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "topic",
+        "label": "Question topic",
+        "options": [
+          "Buying and labels",
+          "Tasting and flavor",
+          "Storage and kitchen use",
+          "Foodservice sourcing questions",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "location",
+        "label": "Country / region (optional)",
+        "options": null,
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "permitrite",
+    "name": "PermitRite",
+    "type": "permit_preparation",
+    "label": "Permit preparation",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "municipality",
+        "label": "Municipality and state",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "project_type",
+        "label": "Project type",
+        "options": [
+          "Business opening",
+          "Change of use",
+          "Property improvement",
+          "Signage",
+          "Other / not sure"
+        ],
+        "required": true
+      },
+      {
+        "key": "project_stage",
+        "label": "Current stage",
+        "options": [
+          "Early planning",
+          "Gathering documents",
+          "Contacted authority",
+          "Application in progress"
+        ],
+        "required": true
+      },
+      {
+        "key": "authority",
+        "label": "Authority / department contacted (optional)",
+        "options": null,
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "deliveryrite",
+    "name": "DeliveryRite",
+    "type": "delivery_operations",
+    "label": "Delivery operations",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "business_type",
+        "label": "Business type",
+        "options": [
+          "Restaurant / food retail",
+          "General retail",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "service_area",
+        "label": "Town / delivery area",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "delivery_model",
+        "label": "Current delivery arrangement",
+        "options": [
+          "Planning delivery",
+          "Own drivers",
+          "Third-party platform",
+          "Mixed"
+        ],
+        "required": true
+      },
+      {
+        "key": "focus",
+        "label": "Main question",
+        "options": [
+          "Order economics",
+          "Dispatch and handoffs",
+          "Customer communication",
+          "Other"
+        ],
+        "required": true
+      }
+    ]
+  }
+]

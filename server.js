@@ -7,6 +7,7 @@ import nodemailer from "nodemailer";
 import rateLimit from "express-rate-limit";
 import pg from "pg";
 import { z } from "zod";
+import {brandIntakeSchema,validateBrandIntake,recordBrandIntake,attachBrandIntake,brandFilterSql} from "./lib/brand-intake.js";
 import { databaseOptions } from "./lib/database.js";
 import { mountManagedAccounts } from "./lib/account-adapter.js";
 import { mountProcessRiteReports } from "./lib/daily-report.js";
@@ -126,6 +127,9 @@ const optionalString = (max = 5000) => z.preprocess(
 );
 
 const leadSchema = z.object({
+  brand: optionalString(60),
+  enquiry_type: optionalString(80),
+  intake_details: z.record(z.string().max(500)).optional(),
   name: optionalString(120),
   business_name: optionalString(160),
   phone: z.preprocess(
@@ -250,6 +254,7 @@ function getMailer() {
 
 function normalizeLead(row) {
   return {
+    brand: row.brand, brand_label: row.brand_label, intake_group: row.intake_group, enquiry_type: row.enquiry_type, enquiry_label: row.enquiry_label, intake_details: row.intake_details || {}, intake_fields: row.intake_fields || [], form_version: row.form_version,
     id: row.id,
     created_at: row.created_at,
     updated_at: row.updated_at || row.created_at,
@@ -334,6 +339,7 @@ async function ensureSchema() {
  await pool.query('SELECT id FROM lead_submissions LIMIT 0');
  const ready=await pool.query("SELECT count(*)::int n FROM crm_users WHERE role='admin' AND status='active' AND password_hash IS NOT NULL");
  if(!ready.rows[0].n)throw Error('An active administrator must be bootstrapped before deployment');
+ await pool.query(brandIntakeSchema);
  await pool.query(callSchema);
  await pool.query(smsSchema);
  await pool.query(smsSendSchema);
@@ -365,6 +371,7 @@ app.get("/api/leads", crmReadLimiter, async (req, res) => {
 
   const params = [];
   const where = [];
+  try { where.push(brandFilterSql(req.query,params)); } catch { return res.status(400).json({ok:false,message:"Choose a valid CRM view."}); }
 
   if (!includeArchived) where.push("coalesce(archived, false) = false");
 
@@ -443,7 +450,7 @@ app.get("/api/leads", crmReadLimiter, async (req, res) => {
     return res.status(200).json({
       ok: true,
       count: result.rows.length,
-      leads: (await attachCallStatus(pool,await attachSms(pool,result.rows))).map(normalizeLead)
+      leads: (await attachCallStatus(pool,await attachSms(pool,await attachBrandIntake(pool,result.rows)))).map(normalizeLead)
     });
   } catch (error) {
     console.error("lead_list_error", { code: error.code || error.name, message: error.message });
@@ -456,6 +463,8 @@ async function handleDashboardStats(req, res) {
   if (!requireDatabase(res)) return;
 
   try {
+    const params=[];
+    let viewCondition; try { viewCondition=brandFilterSql(req.query,params); } catch { return res.status(400).json({ok:false,message:"Choose a valid CRM view."}); }
     const result = await pool.query(`
       select
         count(*)::int as total,
@@ -471,8 +480,8 @@ async function handleDashboardStats(req, res) {
         count(*) filter (where coalesce(priority, '') = 'Urgent')::int as urgent,
         count(*) filter (where coalesce(sms_consent, false) = true)::int as sms_opted_in
       from lead_submissions
-      where coalesce(archived, false) = false
-    `);
+      where coalesce(archived, false) = false AND ${viewCondition}
+    `,params);
 
     return res.status(200).json({ ok: true, stats: result.rows[0] });
   } catch (error) {
@@ -540,7 +549,7 @@ app.get("/api/leads/:id", crmReadLimiter, async (req, res) => {
     );
 
     if (!result.rows[0]) return res.status(404).json({ ok: false, message: "Lead not found." });
-    return res.status(200).json({ ok: true, lead: normalizeLead((await attachCallStatus(pool,await attachSms(pool,result.rows)))[0]) });
+    return res.status(200).json({ ok: true, lead: normalizeLead((await attachCallStatus(pool,await attachSms(pool,await attachBrandIntake(pool,result.rows))))[0]) });
   } catch (error) {
     console.error("lead_detail_error", { code: error.code || error.name, message: error.message });
     return res.status(500).json({ ok: false, message: "Unable to load lead.", code: error.code || error.name || "UNKNOWN" });
@@ -622,7 +631,7 @@ app.patch("/api/leads/:id", crmReadLimiter, async (req, res) => {
     );
 
     if (!result.rows[0]) return res.status(404).json({ ok: false, message: "Lead not found." });
-    return res.status(200).json({ ok: true, lead: normalizeLead((await attachCallStatus(pool,await attachSms(pool,result.rows)))[0]) });
+    return res.status(200).json({ ok: true, lead: normalizeLead((await attachCallStatus(pool,await attachSms(pool,await attachBrandIntake(pool,result.rows))))[0]) });
   } catch (error) {
     console.error("lead_update_error", { code: error.code || error.name, message: error.message });
     return res.status(500).json({ ok: false, message: "Unable to update lead.", code: error.code || error.name || "UNKNOWN" });
@@ -663,6 +672,8 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
     return res.status(400).json({ ok: false, message: "Please check the form fields and try again." });
   }
 
+  let intake;
+  try { intake=validateBrandIntake(parsed.data); } catch(error) { return res.status(400).json({ok:false,message:error.message}); }
   const lead = normalizeInboundLead(parsed.data);
   if (lead.company) return res.status(200).json({ ok: true });
   if (/vapi/i.test(lead.lead_source)) return res.status(410).json({ok:false,message:'Voice intake uses the authenticated call endpoint.'});
@@ -717,6 +728,7 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
       ]
     );
     submissionId = stored.rows[0].id;
+    await recordBrandIntake(client,submissionId,intake);
     await recordWebsiteConsent(client,submissionId,lead);
     await recordReviewRequest(client,submissionId,parsed.data);
     await client.query('COMMIT');
@@ -728,7 +740,7 @@ app.post("/api/leads", leadSubmitLimiter, async (req, res) => {
         from: EMAIL_FROM,
         to: EMAIL_TO,
         replyTo: lead.email,
-        subject: `New Process Rite lead: ${lead.name}${lead.business_name ? ` at ${lead.business_name}` : ""}`,
+        subject: `New ${intake ? intake.brand : "Process Rite"} enquiry: ${lead.name}${lead.business_name ? ` at ${lead.business_name}` : ""}`,
         text: leadEmailText(lead, createdAt)
       });
       emailSent = true;
