@@ -22,7 +22,7 @@ it('stores every brand’s structured answers and isolates views including legac
  const oliveParams=[],oliveFilter=brandFilterSql({brand:'oliverite'},oliveParams);
  expect((await db.query('SELECT id FROM lead_submissions WHERE '+oliveFilter,oliveParams)).rows).toHaveLength(2);
  const projectParams=[],projectFilter=brandFilterSql({view:'projects'},projectParams);
- expect((await db.query('SELECT id FROM lead_submissions WHERE '+projectFilter,projectParams)).rows).toHaveLength(12);
+ expect((await db.query('SELECT id FROM lead_submissions WHERE '+projectFilter,projectParams)).rows).toHaveLength(brands.length+1);
 },20000);
 it('rejects mismatched brands, unknown fields, missing required fields, and invalid options',()=>{
  const input={brand:'oliverite',enquiry_type:'olive_oil_question',page_source:'https://oliverite.com/contact/',intake_details:{buyer_type:'Home cook',topic:'Tasting and flavor'}};

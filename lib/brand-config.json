@@ -492,5 +492,100 @@
         "required": true
       }
     ]
+  },
+  {
+    "slug": "onlinebagel",
+    "name": "OnlineBagel",
+    "type": "bagel_order_enquiry",
+    "label": "Bagel shipping / wholesale",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "order_type",
+        "label": "Order type",
+        "options": [
+          "Shipped order within the US",
+          "New Jersey wholesale",
+          "Other order question"
+        ],
+        "required": true
+      },
+      {
+        "key": "destination",
+        "label": "Destination city, state and ZIP (no street address)",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "quantity",
+        "label": "Approximate quantity or recurring volume (optional)",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "timing",
+        "label": "Requested timing (subject to confirmation)",
+        "options": null,
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "payrollrite",
+    "name": "PayrollRite",
+    "type": "payroll_processing",
+    "label": "Payroll processing",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "business_type",
+        "label": "Business type",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "states",
+        "label": "States where employees work",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "employee_count",
+        "label": "Approximate employee count",
+        "options": [
+          "1\u20135",
+          "6\u201320",
+          "21\u201350",
+          "51\u2013100",
+          "100+",
+          "Planning first hire"
+        ],
+        "required": true
+      },
+      {
+        "key": "pay_frequency",
+        "label": "Current or planned pay frequency",
+        "options": [
+          "Weekly",
+          "Every two weeks",
+          "Twice monthly",
+          "Monthly",
+          "Not sure"
+        ],
+        "required": false
+      },
+      {
+        "key": "current_provider",
+        "label": "Current payroll provider (optional)",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "timing",
+        "label": "Preferred start or changeover timing (optional)",
+        "options": null,
+        "required": false
+      }
+    ]
   }
 ]
