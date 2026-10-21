@@ -630,5 +630,105 @@
         "required": false
       }
     ]
+  },
+  {
+    "slug": "honeysold",
+    "name": "HoneySold",
+    "type": "honey_buying_enquiry",
+    "label": "Honey buying enquiry",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "buyer_type",
+        "label": "I am a",
+        "options": [
+          "Home kitchen",
+          "Foodservice buyer",
+          "Retail buyer",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "topic",
+        "label": "Enquiry topic",
+        "options": [
+          "Honey for home",
+          "Foodservice or wholesale",
+          "Jar comparison",
+          "Other honey question"
+        ],
+        "required": true
+      },
+      {
+        "key": "quantity",
+        "label": "Approximate quantity or recurring need",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "destination",
+        "label": "Destination city and state",
+        "options": null,
+        "required": false
+      }
+    ]
+  },
+  {
+    "slug": "coffeesold",
+    "name": "CoffeeSold",
+    "type": "coffee_buying_enquiry",
+    "label": "Coffee buying enquiry",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "buyer_type",
+        "label": "I am a",
+        "options": [
+          "Home brewer",
+          "Cafe / hospitality",
+          "Office buyer",
+          "Retail buyer",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "topic",
+        "label": "Enquiry topic",
+        "options": [
+          "Beans and roast preferences",
+          "Cafe or wholesale",
+          "Office coffee",
+          "Pack comparison",
+          "Other coffee question"
+        ],
+        "required": true
+      },
+      {
+        "key": "brew_method",
+        "label": "Brewing method",
+        "options": [
+          "Espresso",
+          "Filter / pour-over",
+          "French press",
+          "Cold brew",
+          "Not sure"
+        ],
+        "required": false
+      },
+      {
+        "key": "quantity",
+        "label": "Approximate quantity or recurring need",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "destination",
+        "label": "Destination city and state",
+        "options": null,
+        "required": false
+      }
+    ]
   }
 ]
