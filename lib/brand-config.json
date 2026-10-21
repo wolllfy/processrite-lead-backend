@@ -587,5 +587,48 @@
         "required": false
       }
     ]
+  },
+  {
+    "slug": "olivesold",
+    "name": "OliveSold",
+    "type": "olive_oil_buying_enquiry",
+    "label": "Olive oil buying enquiry",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "buyer_type",
+        "label": "I am a",
+        "options": [
+          "Home cook",
+          "Foodservice buyer",
+          "Retail buyer",
+          "Other"
+        ],
+        "required": true
+      },
+      {
+        "key": "topic",
+        "label": "Enquiry topic",
+        "options": [
+          "Home kitchen buying",
+          "Foodservice or wholesale",
+          "Bottle comparison",
+          "Other olive oil question"
+        ],
+        "required": true
+      },
+      {
+        "key": "quantity",
+        "label": "Approximate quantity or recurring need",
+        "options": null,
+        "required": false
+      },
+      {
+        "key": "destination",
+        "label": "Destination city and state",
+        "options": null,
+        "required": false
+      }
+    ]
   }
 ]
