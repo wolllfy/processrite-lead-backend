@@ -730,5 +730,48 @@
         "required": false
       }
     ]
+  },
+  {
+    "slug": "restockrite",
+    "name": "RestockRite",
+    "type": "supply_restock",
+    "label": "Supply and reorder request",
+    "group": "projects",
+    "fields": [
+      {
+        "key": "supply_category",
+        "label": "Supply category",
+        "options": [
+          "Mixed supply list",
+          "Trash bags and liners",
+          "Receipt paper and ribbons",
+          "Takeout packaging",
+          "Labels and everyday supplies"
+        ],
+        "required": true
+      },
+      {
+        "key": "delivery_zip",
+        "label": "Delivery ZIP code",
+        "options": null,
+        "required": true
+      },
+      {
+        "key": "order_pattern",
+        "label": "Order pattern",
+        "options": [
+          "One-time order",
+          "Repeat-order planning",
+          "Not decided yet"
+        ],
+        "required": true
+      },
+      {
+        "key": "requirements",
+        "label": "Supply specifications",
+        "options": null,
+        "required": false
+      }
+    ]
   }
 ]
