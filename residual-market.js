@@ -6,7 +6,7 @@ import {z} from 'zod';
 export const intakeSchema=z.object({
  event_id:z.string().regex(/^[a-f0-9]{64}$/), record_id:z.number().int().positive(),
  kind:z.enum(['seller','contact']), source:z.literal('https://residualmarket.com'),
- consent:z.object({granted:z.literal(true),at:z.string().datetime(),version:z.string().min(1).max(80)}).strict(),
+ consent:z.object({granted:z.literal(true),at:z.string().datetime({offset:true}),version:z.string().min(1).max(80)}).strict(),
  contact:z.object({name:z.string().trim().min(2).max(120),company:z.string().trim().max(160),email:z.string().trim().email().max(160).transform(x=>x.toLowerCase()),phone:z.string().trim().min(7).max(40)}).strict(),
  message:z.string().trim().max(1600)
 }).strict();
