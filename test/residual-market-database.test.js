@@ -1,0 +1,12 @@
+import {beforeAll,afterAll,expect,it} from 'vitest';
+import {PGlite} from '@electric-sql/pglite';
+import fs from 'node:fs';
+import express from 'express';
+import request from 'supertest';
+import {ensureResidualSchema,createResidualRouter} from '../residual-market.js';
+let db,app;const key='local-test-only-'+ 'x'.repeat(48);
+const payload={event_id:'c'.repeat(64),record_id:77,kind:'contact',source:'https://residualmarket.com',consent:{granted:true,at:'2026-10-25T22:00:00Z',version:'2026-10-25'},contact:{name:'Fictional QA',company:'Example Test',email:'qa@example.test',phone:'2025550100'},message:'Test only'};
+beforeAll(async()=>{db=new PGlite();await db.waitReady;await db.exec(fs.readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));await ensureResidualSchema(db);await ensureResidualSchema(db);const pool={query:(...args)=>db.query(...args),connect:async()=>({query:(...args)=>db.query(...args),release(){}})};app=express();app.use(express.json());app.use('/intake',createResidualRouter({pool,getKey:()=>key,isReady:()=>true,logger:{info(){},warn(){},error(){}}}));},20000);
+afterAll(async()=>db.close());
+it('persists against the actual PostgreSQL schema and deduplicates a retry',async()=>{const first=await request(app).post('/intake/leads').set('X-Residual-Market-Key',key).send(payload);expect(first.status).toBe(201);const retry=await request(app).post('/intake/leads').set('X-Residual-Market-Key',key).send(payload);expect(retry.status).toBe(200);expect(retry.body.id).toBe(first.body.id);const rows=(await db.query('SELECT * FROM lead_submissions')).rows;expect(rows).toHaveLength(1);expect(rows[0].sms_consent).toBe(false);expect(rows[0].monthly_processing_volume).toBe('Not applicable - portfolio inquiry');expect((await db.query('SELECT * FROM residual_market_ingest_events')).rows).toHaveLength(1);});
+it('rejects unconsented requests before any write',async()=>{const result=await request(app).post('/intake/leads').set('X-Residual-Market-Key',key).send({...payload,event_id:'d'.repeat(64),consent:{...payload.consent,granted:false}});expect(result.status).toBe(400);expect((await db.query('SELECT * FROM lead_submissions')).rows).toHaveLength(1);});

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import {createResidualRouter,ensureResidualSchema} from "./residual-market.js";
 import crypto from "crypto";
 import cors from "cors";
 import express from "express";
@@ -105,6 +106,11 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   handler: rateLimitHandler
 });
+
+const residualIntegration={ready:false};
+app.use('/api/integrations/residual-market',createResidualRouter({pool,getKey:()=>process.env.RESIDUAL_MARKET_INGEST_KEY||'',isReady:()=>residualIntegration.ready,
+ notify:async(lead,id)=>{await getMailer().sendMail({from:EMAIL_FROM,to:EMAIL_TO,replyTo:lead.email,subject:'Residual Market inquiry #'+id,text:leadEmailText(lead,new Date().toISOString())});return true;}
+}));
 
 mountVapiCalls(app,{pool,env:process.env,send:message=>getMailer().sendMail(message)});
 mountTwilioSms(app,{pool,env:process.env,lookupMessage:sid=>twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN).messages(sid).fetch()});
@@ -809,7 +815,8 @@ console.info("startup_begin", {
   trustProxyHops: app.get("trust proxy")
 });
 ensureSchema()
-  .then(() => {
+  .then(async () => {
+    if(process.env.RESIDUAL_MARKET_INGEST_KEY){try{await ensureResidualSchema(pool);residualIntegration.ready=true;}catch(error){console.error("residual_market_schema_unavailable",{code:error.code||"migration_failed"});}}
     console.info("database_schema_ready");
     const smsTimer=setInterval(()=>deliverSmsAlert({pool,env:process.env,send:message=>getMailer().sendMail(message)}).catch(()=>console.error('sms_reply_worker_failed')),10000);smsTimer.unref();
     app.listen(port, () => console.info("startup_ready", { port, version: process.env.RENDER_GIT_COMMIT || "unknown" }));
